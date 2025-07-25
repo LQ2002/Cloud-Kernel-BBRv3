@@ -19,12 +19,12 @@ jobs:
       - name: Get Latest Kernel Version
         id: get_kernel_version
         run: |
-          kernel_version=$(curl -s https://www.kernel.org | grep -A 1 -m 1 "6.12" | grep -oP '\d+\.\d+\.\d+')
+          kernel_version=$(git ls-remote -t https://salsa.debian.org/kernel-team/linux.git 'refs/tags/debian/6.12*' | grep -oP '6\.12\.\d+' | sort -V | tail -n 1)
           if [ -z "$kernel_version" ]; then
             echo "❌ Failed to get kernel version for 6.12 LTS, please check the kernel version is correct."
             exit 1
           fi
-          echo "✅ Latest kernel version: $kernel_version"
+          echo "✅ Latest Debian kernel version: $kernel_version"
           echo "KERNEL_VERSION=$kernel_version" >> $GITHUB_OUTPUT
           
       - name: Check x86_64 Build Status
