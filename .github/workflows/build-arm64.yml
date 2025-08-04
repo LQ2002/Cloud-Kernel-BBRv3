@@ -120,34 +120,17 @@ jobs:
           cd linux
           quilt push -a
           echo "✅ All Patches Applied"
-      - name: Setup sccache
-        uses: mozilla-actions/sccache-action@v0.0.9
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
         with:
-          version: "v0.10.0"
-      - name: Set sccache environment variables
-        run: |
-          # Use Local storage for sccache, and push it to GHA later
-          echo "SCCACHE_CACHE_SIZE=5G" >> $GITHUB_ENV
-          echo "SCCACHE_DIR=/home/runner/.cache/sccache" >> $GITHUB_ENV
-          echo "DATE_STRING=$(date +'%Y%m%d')" >> $GITHUB_ENV
-      - name: Setup Github Cache for Build
-        uses: actions/cache@v4
-        env:
-          SCCACHE_DIR: ${{ env.SCCACHE_DIR }}
-          DATE_STRING: ${{ env.DATE_STRING }}
-        with:
-          path: ${{ env.SCCACHE_DIR }}
-          lookup-only: ${{ needs.prepare.outputs.skip_cache }}
-          key: sccache-${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}-arm64-${{ env.DATE_STRING }}
-          restore-keys: |
-            sccache-${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}-arm64-
+          key: linux-${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}-arm64
       - name: Configure Kernel Build
         run: |
           echo "⌛ Configuring Kernel Build..."
           cd linux
           cp ../configs/arm64.config .config
           echo "⭕ Copied Pre-Configured .config from arm64"
-          make CC="sccache gcc" HOSTCC="sccache gcc" olddefconfig
+          make CC="ccache gcc" HOSTCC="ccache gcc" olddefconfig
           echo "✅ Final Kernel Build Configured for arm64"
       - name: Build Kernel (Debian Package)
         env:
@@ -158,7 +141,7 @@ jobs:
         run: |
           echo "⌛ Start Building Kernel (Debian Package) for arm64..."
           cd linux
-          make -j $(nproc) CC="sccache gcc" HOSTCC="sccache gcc" bindeb-pkg
+          make -j $(nproc) CC="ccache gcc" HOSTCC="ccache gcc" bindeb-pkg
           echo "✅ Kernel (Debian Package) Built Successfully"
           cp .config ../linux-${{ needs.prepare.outputs.kernel_version }}-arm64.config
           echo "✅ Copied Kernel Config"
