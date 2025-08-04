@@ -20,8 +20,8 @@ This repository provides automated daily builds of Debian kernel packages with e
   - Integrated modified **BBRPlus** congestion control algorithm from dog250 & cx9208 (modified from [UJX6N/bbrplus-6.x_stable](https://github.com/UJX6N/bbrplus-6.x_stable))
 - Integrated **TCP Brutal** multiplexing (mux) congestion control algorithm from apernet (from [apernet/tcp-brutal](https://github.com/apernet/tcp-brutal))
 - Low-latency task schedulers replacing the default scheduler:
-  - x86_64 uses **ECHO-CPU-Scheduler** (from [hamadmarri/ECHO-CPU-Scheduler](https://github.com/hamadmarri/ECHO-CPU-Scheduler))
-  - arm64 uses **Bore-Scheduler** (from [firelzrd/bore-scheduler](https://github.com/firelzrd/bore-scheduler))
+  - Uses **ECHO-CPU-Scheduler** (from [hamadmarri/ECHO-CPU-Scheduler](https://github.com/hamadmarri/ECHO-CPU-Scheduler))
+  - Disabled **Bore-Scheduler** (from [firelzrd/bore-scheduler](https://github.com/firelzrd/bore-scheduler)) due to compilation error
 - Multi-architecture support (x86_64 & arm64), daily automatic builds tracking updates
 
 ## 🚀 Key Features
