@@ -118,7 +118,7 @@ jobs:
         run: |
           echo "⌛ Applying Patches..."
           cd linux
-          quilt push -a --fuzz=0
+          quilt push -a
           echo "✅ All Patches Applied"
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.9
