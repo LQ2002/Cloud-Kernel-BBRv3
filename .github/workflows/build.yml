@@ -8,7 +8,7 @@ on:
       kernel_version:
         description: "Kernel version"
         required: true
-        default: "6.12.21"
+        default: "6.12.30"
         type: string
       skip_cache:
         description: "Skip Cache"
@@ -105,7 +105,7 @@ jobs:
           echo "⭕ Copied Xanmod Net Patches"
           cp -R ../echo-patches/${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}.y ./patches/cpu-scheduler
           echo "⭕ Copied ECHO-CPU-Scheduler Patches"
-          cp -R ../patches ./patches/custom
+          cp -R ../kernel_patches/${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }} ./patches/custom
           cd patches
           echo "# Net Patches from Xanmod" >> series
           find ./net -type f -name "*.patch" -printf "net/%P\n" | sort >> series
