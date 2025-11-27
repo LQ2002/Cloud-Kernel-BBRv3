@@ -110,7 +110,87 @@ jobs:
         run: |
           cd linux
           cp ../configs/x86_64.config .config
+          
+          echo "=== Configuring TCP Congestion Control ==="
+          
+          # 将所有 BBR 变体设置为内建 (built-in)
+          scripts/config --enable CONFIG_TCP_CONG_BBR
+          scripts/config --enable CONFIG_TCP_CONG_BBR1
+          scripts/config --enable CONFIG_TCP_CONG_BBRPLUS
+          scripts/config --enable CONFIG_TCP_CONG_BRUTAL
+          
+          # 设置 BBR 为默认拥塞控制算法
+          scripts/config --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
+          scripts/config --enable CONFIG_DEFAULT_BBR
+          scripts/config --disable CONFIG_DEFAULT_CUBIC
+          
+          # 重新生成配置，处理依赖关系
           make olddefconfig
+          
+          echo "=== TCP Congestion Control Configuration Complete ==="
+
+      - name: Verify Kernel Configuration
+        run: |
+          cd linux
+          
+          echo "================================================"
+          echo "Verifying TCP Congestion Control Configuration"
+          echo "================================================"
+          
+          # 检查 BBR 变体是否都设置为内建
+          echo ""
+          echo "Checking BBR variants (should all be =y):"
+          grep "CONFIG_TCP_CONG_BBR=" .config | grep -v "^#" || echo "❌ CONFIG_TCP_CONG_BBR not found or disabled"
+          grep "CONFIG_TCP_CONG_BBR1=" .config | grep -v "^#" || echo "❌ CONFIG_TCP_CONG_BBR1 not found or disabled"
+          grep "CONFIG_TCP_CONG_BBRPLUS=" .config | grep -v "^#" || echo "❌ CONFIG_TCP_CONG_BBRPLUS not found or disabled"
+          grep "CONFIG_TCP_CONG_BRUTAL=" .config | grep -v "^#" || echo "❌ CONFIG_TCP_CONG_BRUTAL not found or disabled"
+          
+          # 检查默认拥塞控制算法
+          echo ""
+          echo "Checking default congestion control:"
+          grep "CONFIG_DEFAULT_TCP_CONG=" .config | grep -v "^#" || echo "❌ CONFIG_DEFAULT_TCP_CONG not found"
+          grep "CONFIG_DEFAULT_BBR=" .config | grep -v "^#" || echo "❌ CONFIG_DEFAULT_BBR not found"
+          
+          # 验证关键配置
+          echo ""
+          echo "Validation Results:"
+          
+          if grep -q "CONFIG_TCP_CONG_BBR=y" .config; then
+            echo "✅ BBR is built-in"
+          else
+            echo "❌ BBR is NOT built-in"
+            exit 1
+          fi
+          
+          if grep -q "CONFIG_TCP_CONG_BBR1=y" .config; then
+            echo "✅ BBR1 is built-in"
+          else
+            echo "⚠️  BBR1 is NOT built-in (might not exist in patches)"
+          fi
+          
+          if grep -q "CONFIG_TCP_CONG_BBRPLUS=y" .config; then
+            echo "✅ BBRPlus is built-in"
+          else
+            echo "⚠️  BBRPlus is NOT built-in (might not exist in patches)"
+          fi
+          
+          if grep -q "CONFIG_TCP_CONG_BRUTAL=y" .config; then
+            echo "✅ Brutal is built-in"
+          else
+            echo "⚠️  Brutal is NOT built-in (might not exist in patches)"
+          fi
+          
+          if grep -q 'CONFIG_DEFAULT_TCP_CONG="bbr"' .config; then
+            echo "✅ BBR is set as default"
+          else
+            echo "❌ BBR is NOT set as default"
+            exit 1
+          fi
+          
+          echo ""
+          echo "================================================"
+          echo "Configuration verification complete"
+          echo "================================================"
 
       - name: Build Kernel Debian Packages
         env:
@@ -136,3 +216,47 @@ jobs:
         run: |
           BUILD_TIMESTAMP=$(date -Is)
           echo "BUILD_TIMESTAMP=$BUILD_TIMESTAMP" >> $GITHUB_OUTPUT
+```
+
+## 主要修改说明
+
+### 1. **Configure Kernel 步骤**（新增配置逻辑）
+- 使用 `scripts/config` 工具强制启用所有 BBR 变体为内建 (`=y`)
+- 设置 BBR 为默认拥塞控制算法
+- 禁用 CUBIC 作为默认算法
+- 运行 `make olddefconfig` 处理依赖关系
+
+### 2. **Verify Kernel Configuration 步骤**（新增验证步骤）
+- 检查所有 BBR 变体的配置状态
+- 验证默认拥塞控制算法设置
+- 如果关键配置缺失则构建失败
+- 提供清晰的状态反馈（✅ 成功，⚠️ 警告，❌ 错误）
+
+## 预期结果
+
+构建完成后，您会在日志中看到类似输出：
+```
+================================================
+Verifying TCP Congestion Control Configuration
+================================================
+
+Checking BBR variants (should all be =y):
+CONFIG_TCP_CONG_BBR=y
+CONFIG_TCP_CONG_BBR1=y
+CONFIG_TCP_CONG_BBRPLUS=y
+CONFIG_TCP_CONG_BRUTAL=y
+
+Checking default congestion control:
+CONFIG_DEFAULT_TCP_CONG="bbr"
+CONFIG_DEFAULT_BBR=y
+
+Validation Results:
+✅ BBR is built-in
+✅ BBR1 is built-in
+✅ BBRPlus is built-in
+✅ Brutal is built-in
+✅ BBR is set as default
+
+================================================
+Configuration verification complete
+================================================
