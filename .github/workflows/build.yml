@@ -31,23 +31,13 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" == "repository_dispatch" ]; then
             KERNEL_VERSION="${{ github.event.client_payload.kernel_version }}"
-            KERNEL_MINOR_VERSION=$(echo "$KERNEL_VERSION" | cut -d '.' -f 2)
-            KERNEL_MAJOR_VERSION=$(echo "$KERNEL_VERSION" | cut -d '.' -f 1)
-            SKIP_CACHE=false
           else
             KERNEL_VERSION="${{ inputs.kernel_version }}"
-            KERNEL_MINOR_VERSION=$(echo "$KERNEL_VERSION" | cut -d '.' -f 2)
-            KERNEL_MAJOR_VERSION=$(echo "$KERNEL_VERSION" | cut -d '.' -f 1)
-            SKIP_CACHE="${{ inputs.skip_cache }}" || SKIP_CACHE=false
           fi
-          if [ -z "$KERNEL_VERSION" ]; then
-            echo "❌ Failed to get kernel version"
-            exit 1
-          fi
-          echo "✅ Using kernel version: $KERNEL_VERSION"
-          echo "✅ Using kernel minor version: $KERNEL_MINOR_VERSION"
-          echo "✅ Using kernel major version: $KERNEL_MAJOR_VERSION"
-          echo "✅ Using skip cache: $SKIP_CACHE"
+          KERNEL_MINOR_VERSION=$(echo "$KERNEL_VERSION" | cut -d '.' -f 2)
+          KERNEL_MAJOR_VERSION=$(echo "$KERNEL_VERSION" | cut -d '.' -f 1)
+          SKIP_CACHE="${{ inputs.skip_cache }}" || SKIP_CACHE=false
+
           echo "KERNEL_VERSION=$KERNEL_VERSION" >> $GITHUB_OUTPUT
           echo "KERNEL_MINOR_VERSION=$KERNEL_MINOR_VERSION" >> $GITHUB_OUTPUT
           echo "KERNEL_MAJOR_VERSION=$KERNEL_MAJOR_VERSION" >> $GITHUB_OUTPUT
@@ -61,97 +51,76 @@ jobs:
       kernel_version: ${{ needs.prepare.outputs.kernel_version }}
       build_time: ${{ steps.get_build_time.outputs.BUILD_TIMESTAMP }}
     steps:
-      - name: Update and install dependencies
+      - name: Install Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential curl git patch jq openssl quilt \
             libncurses-dev libssl-dev libelf-dev libudev-dev libpci-dev libcap-dev libpcre2-dev libcurl4-openssl-dev \
-            bison bc flex rsync debhelper lz4 pahole zstd dpkg-dev fakeroot kmod cpio xz-utils
+            bison bc flex rsync debhelper lz4 pahole zstd dpkg-dev fakeroot kmod cpio xz-utils ccache
 
-      - name: Checkout Workflow Source Code
+      - name: Checkout Kernel Sources
         uses: actions/checkout@v4
         with:
           fetch-tags: true
+
       - name: Download Linux Kernel Source
         run: |
-          echo "⌛ Downloading Linux Kernel Source Code for ${{ needs.prepare.outputs.kernel_version }}..."
           wget https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-${{ needs.prepare.outputs.kernel_version }}.tar.xz
           tar -xf linux-${{ needs.prepare.outputs.kernel_version }}.tar.xz
           rm linux-${{ needs.prepare.outputs.kernel_version }}.tar.xz
           mv linux-${{ needs.prepare.outputs.kernel_version }} linux
-          echo "✅ Downloaded Linux Kernel Source Code for ${{ needs.prepare.outputs.kernel_version }}"
-      - name: Download Debian Kernel Additional Source
+
+      - name: Download Debian Kernel Patches
         run: |
-          echo "⌛ Downloading Debian Kernel Additional Source..."
           git clone -b debian/${{ needs.prepare.outputs.kernel_version }}-1 --depth=1 https://salsa.debian.org/kernel-team/linux.git linux-debian
-          echo "✅ Downloaded Debian Kernel Additional Source"
-      - name: Download Xanmod Patches
+
+      - name: Download Xanmod Network Patches (BBR/BBRv3)
         run: |
-          echo "⌛ Downloading Xanmod Patches..."
           git clone --depth=1 https://gitlab.com/xanmod/linux-patches.git linux-xanmod-patches
-          echo "✅ Downloaded Xanmod Patches"
-      # - name: Checkout ECHO-CPU-Scheduler
-      #   uses: actions/checkout@v4
-      #   with:
-      #     repository: hamadmarri/ECHO-CPU-Scheduler
-      #     path: echo-patches
-      - name: Checkout Bore-Scheduler Patches
+
+      - name: Checkout Bore Scheduler Patches
         uses: actions/checkout@v4
         with:
           repository: firelzrd/bore-scheduler
           path: bore-patches
+
       - name: Organize Patches
         run: |
-          echo "⌛ Organizing Patches..."
           cd linux
           cp -R ../linux-debian/debian/patches ./patches
-          echo "⭕ Copied Debian Patches"
           cp -R ../linux-xanmod-patches/linux-${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}.y-xanmod/net ./patches/net
-          echo "⭕ Copied Xanmod Net Patches"
-          # cp -R ../echo-patches/${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}.y ./patches/cpu-scheduler
-          # echo "⭕ Copied ECHO-CPU-Scheduler Patches"
           cp -R ../bore-patches/patches/stable/linux-${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}-bore ./patches/cpu-scheduler
-          echo "⭕ Copied Bore-Scheduler Patches"
-          cp -R ../kernel_patches/${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }} ./patches/custom
+          mkdir -p patches/custom
+          cp -R ../kernel_patches/${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}/* patches/custom/
+          
           cd patches
           echo "# Net Patches from Xanmod" >> series
           find ./net -type f -name "*.patch" -printf "net/%P\n" | sort >> series
-          echo "# CPU Scheduler Patches from ECHO-CPU-Scheduler" >> series
+          echo "# CPU Scheduler Patches from Bore" >> series
           find ./cpu-scheduler -type f -name "*.patch" -printf "cpu-scheduler/%P\n" | sort >> series
           echo "# Custom Patches" >> series
           find ./custom -type f -name "*.patch" -printf "custom/%P\n" | sort >> series
-          echo "✅ All Patches Organized"
+
       - name: Apply Patches
         run: |
-          echo "⌛ Applying Patches..."
           cd linux
           quilt push -a
-          echo "✅ All Patches Applied"
-      - name: Setup ccache
-        uses: hendrikmuhs/ccache-action@v1.2
-        with:
-          key: linux-${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}-amd64
-      - name: Configure Kernel Build
+
+      - name: Configure Kernel
         run: |
-          echo "⌛ Configuring Kernel Build..."
           cd linux
           cp ../configs/x86_64.config .config
-          echo "⭕ Copied Pre-Configured .config from x86_64"
-          make CC="ccache gcc" HOSTCC="ccache gcc" olddefconfig
-          echo "✅ Final Kernel Build Configured for x86_64"
-      - name: Build Kernel (Debian Package)
+          make olddefconfig
+
+      - name: Build Kernel Debian Packages
         env:
           KBUILD_BUILD_USER: "cloudpassenger"
           KBUILD_BUILD_HOST: "github-actions"
-          KBUILD_BUILD_TIMESTAMP: ""
           KDEB_COMPRESS: "xz"
         run: |
-          echo "⌛ Start Building Kernel (Debian Package) for x86_64..."
           cd linux
-          make -j $(nproc) CC="ccache gcc" HOSTCC="ccache gcc" bindeb-pkg
-          echo "✅ Kernel (Debian Package) Built Successfully"
-          cp .config ../linux-${{ needs.prepare.outputs.kernel_version }}-amd64.config
-          echo "✅ Copied Kernel Config"
+          make -j $(nproc) bindeb-pkg
+
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -161,70 +130,9 @@ jobs:
             *.changes
             *.buildinfo
             *.config
+
       - name: Get build time
         id: get_build_time
         run: |
           BUILD_TIMESTAMP=$(date -Is)
           echo "BUILD_TIMESTAMP=$BUILD_TIMESTAMP" >> $GITHUB_OUTPUT
-          echo "BUILD_TIME=$BUILD_TIMESTAMP"
-          echo "🏷️ Build Time: $BUILD_TIMESTAMP"
-  
-  create-release:
-    name: Create Release
-    needs: [prepare, build]
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Download Artifacts for x86_64
-        uses: actions/download-artifact@v4
-        with:
-          name: kernel-x86_64
-          path: ./
-      - name: Remove Debug Package in Release
-        run: |
-          rm -f linux-image-*-dbg_*.deb
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ needs.prepare.outputs.kernel_version }}
-          name: Debian Cloud Kernel ${{ needs.prepare.outputs.kernel_version }} with BBR3 (amd64)
-          body: |
-            🚀 **Kernel Version:** `${{ needs.prepare.outputs.kernel_version }}`
-
-            📅 **Build Time:** `${{ needs.build.outputs.build_time }}`
-
-            🛠️ **Build Information:**
-            - **Architecture:** `amd64`
-            - **Kernel Type:** `cloud`
-            - **Applied Patches:**
-              - `Debian Patches Collection` (from [kernel-team/linux](https://salsa.debian.org/kernel-team/linux/))
-              - `BBR V3` (from [xanmod/linux-patches](https://gitlab.com/xanmod/linux-patches))
-              - `BBRPlus` (modified from [UJX6N/bbrplus-6.x_stable](https://github.com/UJX6N/bbrplus-6.x_stable))
-              - `TCP Brutal` (from [apernet/tcp-brutal](https://github.com/apernet/tcp-brutal))
-              - `Bore-Scheduler` (from [firelzrd/bore-scheduler](https://github.com/firelzrd/bore-scheduler))
-              - ⚠️ Temporarily disabled `ECHO-CPU-Scheduler` (from [hamadmarri/ECHO-CPU-Scheduler](https://github.com/hamadmarri/ECHO-CPU-Scheduler))
-            
-            --------
-            
-            🚀 **内核版本:** `${{ needs.prepare.outputs.kernel_version }}`
-
-            📅 **构建时间:** `${{ needs.build.outputs.build_time }}`
-
-            🛠️ **构建信息:**
-            - **架构:** `amd64`
-            - **内核类型:** `cloud`
-            - **应用补丁:**
-              - `Debian 补丁集合` (来自 [kernel-team/linux](https://salsa.debian.org/kernel-team/linux/))
-              - `BBR V3` (来自 [xanmod/linux-patches](https://gitlab.com/xanmod/linux-patches))
-              - `BBRPlus` (修改自 [UJX6N/bbrplus-6.x_stable](https://github.com/UJX6N/bbrplus-6.x_stable))
-              - `TCP Brutal` (来自 [apernet/tcp-brutal](https://github.com/apernet/tcp-brutal))
-              - `Bore-Scheduler` (来自 [firelzrd/bore-scheduler](https://github.com/firelzrd/bore-scheduler))
-              - ⚠️ 暂时禁用 `ECHO-CPU-Scheduler` (来自 [hamadmarri/ECHO-CPU-Scheduler](https://github.com/hamadmarri/ECHO-CPU-Scheduler))
-          files: |
-            *.deb
-            *.changes
-            *.buildinfo
-            *.config
-        
-
