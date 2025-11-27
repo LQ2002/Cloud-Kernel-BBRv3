@@ -8,7 +8,7 @@ on:
       kernel_version:
         description: "Kernel version"
         required: true
-        default: "6.12.30"
+        default: "6.12.37"
         type: string
       skip_cache:
         description: "Skip Cache"
