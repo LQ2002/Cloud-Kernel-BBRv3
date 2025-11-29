@@ -56,7 +56,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential curl git patch jq openssl quilt \
             libncurses-dev libssl-dev libelf-dev libudev-dev libpci-dev libcap-dev libpcre2-dev libcurl4-openssl-dev \
-            bison bc flex rsync debhelper lz4 pahole zstd dpkg-dev fakeroot kmod cpio xz-utils ccache
+            bison bc flex rsync debhelper lz4 pahole zstd dpkg-dev fakeroot kmod cpio xz-utils ccache \
+            libdw-dev binutils-dev libunwind-dev libslang2-dev python3-dev python3-setuptools \
+            liblzma-dev libzstd-dev libbabeltrace-dev libbfd-dev libiberty-dev libnuma-dev
 
       - name: Checkout Kernel Sources
         uses: actions/checkout@v4
