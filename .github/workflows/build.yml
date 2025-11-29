@@ -58,7 +58,7 @@ jobs:
             libncurses-dev libssl-dev libelf-dev libudev-dev libpci-dev libcap-dev libpcre2-dev libcurl4-openssl-dev \
             bison bc flex rsync debhelper lz4 pahole zstd dpkg-dev fakeroot kmod cpio xz-utils ccache \
             libdw-dev binutils-dev libunwind-dev libslang2-dev python3-dev python3-setuptools \
-            liblzma-dev libzstd-dev libbabeltrace-dev libbfd-dev libiberty-dev libnuma-dev
+            liblzma-dev libzstd-dev libbabeltrace-dev libbfd-dev libiberty-dev libnuma-dev perl
 
       - name: Checkout Kernel Sources
         uses: actions/checkout@v4
@@ -82,7 +82,6 @@ jobs:
           echo "=== Checking patch availability for kernel $KERNEL_VERSION ==="
           echo ""
           
-          # 检查 Debian 补丁
           echo "Checking Debian kernel patches..."
           DEBIAN_BRANCH="debian/$KERNEL_VERSION-1"
           if git ls-remote --exit-code --heads https://salsa.debian.org/kernel-team/linux.git "$DEBIAN_BRANCH" > /dev/null 2>&1; then
@@ -90,13 +89,11 @@ jobs:
             echo "DEBIAN_AVAILABLE=true" >> $GITHUB_OUTPUT
           else
             echo "⚠️ Debian patches NOT available for $KERNEL_VERSION"
-            echo "This is normal for newer kernel versions"
             echo "DEBIAN_AVAILABLE=false" >> $GITHUB_OUTPUT
           fi
           
           echo ""
           
-          # 检查 Xanmod
           git clone --depth=1 https://gitlab.com/xanmod/linux-patches.git xanmod-check
           if ls xanmod-check/ | grep -q "linux-$KERNEL_MAJOR\.$KERNEL_MINOR"; then
             echo "✅ Xanmod patches available"
@@ -110,7 +107,6 @@ jobs:
           
           echo ""
           
-          # 检查 Bore
           git clone --depth=1 https://github.com/firelzrd/bore-scheduler.git bore-check
           if ls bore-check/patches/stable/ | grep -q "linux-$KERNEL_MAJOR\.$KERNEL_MINOR"; then
             echo "✅ Bore patches available"
@@ -169,11 +165,8 @@ jobs:
               
               XANMOD_COUNT=$(find patches/xanmod-net -type f -name "*.patch" | wc -l)
               echo "✅ Copied $XANMOD_COUNT Xanmod patches"
-              
-              echo "Xanmod patch structure:"
-              find patches/xanmod-net -type f -name "*.patch" | head -10
             else
-              echo "⚠️ Xanmod net directory not found: $XANMOD_SOURCE/net"
+              echo "⚠️ Xanmod net directory not found"
             fi
           fi
           
@@ -188,7 +181,7 @@ jobs:
               BORE_COUNT=$(find patches/cpu-scheduler -type f -name "*.patch" | wc -l)
               echo "✅ Copied $BORE_COUNT Bore patches"
             else
-              echo "⚠️ Bore directory not found: $BORE_SOURCE"
+              echo "⚠️ Bore directory not found"
             fi
           fi
           
@@ -200,33 +193,19 @@ jobs:
           
           if [ -d "$CUSTOM_SOURCE" ]; then
             echo "✅ Custom patch directory found"
-            echo ""
-            echo "Directory structure:"
-            find "$CUSTOM_SOURCE" -type f -name "*.patch"
             
             mkdir -p patches/custom
             cp -R "$CUSTOM_SOURCE"/* patches/custom/
             
-            echo ""
-            echo "Copied custom patches to patches/custom:"
+            echo "Copied custom patches:"
             find patches/custom -type f -name "*.patch" | while read f; do
               echo "  - $f"
             done
             
             CUSTOM_COUNT=$(find patches/custom -type f -name "*.patch" | wc -l)
-            echo ""
             echo "✅ Total custom patches: $CUSTOM_COUNT"
-            
-            if [ $CUSTOM_COUNT -eq 0 ]; then
-              echo "❌ ERROR: No .patch files found in custom directory!"
-              echo "Files in custom directory:"
-              find patches/custom -type f
-            fi
           else
-            echo "❌ ERROR: Custom patch directory not found: $CUSTOM_SOURCE"
-            echo ""
-            echo "Available directories in kernel_patches:"
-            ls -la ../kernel_patches/ || echo "kernel_patches directory doesn't exist"
+            echo "⚠️ Custom patch directory not found"
           fi
           
           echo ""
@@ -267,11 +246,7 @@ jobs:
               echo ""
               echo "Custom patches in series:"
               grep "^custom/" series | nl
-            else
-              echo "❌ ERROR: custom directory exists but contains no .patch files!"
             fi
-          else
-            echo "❌ ERROR: custom directory not found!"
           fi
           
           echo ""
@@ -291,12 +266,6 @@ jobs:
           echo "  - Bore: $BORE_IN_SERIES"
           echo "  - Custom: $CUSTOM_IN_SERIES"
           echo "=================="
-          
-          if [ $CUSTOM_IN_SERIES -eq 0 ]; then
-            echo ""
-            echo "⚠️ WARNING: No custom patches in series file!"
-            echo "This means your custom patches will NOT be applied."
-          fi
 
       - name: Apply Patches
         run: |
@@ -307,40 +276,70 @@ jobs:
             exit 0
           fi
           
-          TOTAL_IN_SERIES=$(grep -c "\.patch$" patches/series)
-          echo "=== Applying $TOTAL_IN_SERIES patches ==="
+          echo "=== Applying Patches ==="
+          quilt push -a -v || echo "Some patches may have failed"
           
-          # 应用所有补丁
-          if quilt push -a -v; then
+          echo ""
+          echo "=== Patch Summary ==="
+          
+          TOTAL_EXPECTED=$(grep -c "\.patch$" patches/series)
+          TOTAL_APPLIED=$(quilt applied | wc -l)
+          
+          echo "Total: $TOTAL_APPLIED / $TOTAL_EXPECTED applied"
+          
+          CUSTOM_EXPECTED=$(grep -c "^custom/" patches/series || echo 0)
+          
+          if [ $CUSTOM_EXPECTED -gt 0 ]; then
+            CUSTOM_APPLIED=$(quilt applied | grep -c "^custom/" || echo 0)
+            
+            echo "Custom patches: $CUSTOM_APPLIED / $CUSTOM_EXPECTED"
+            
+            if [ $CUSTOM_APPLIED -gt 0 ]; then
+              echo "✅ Custom patches applied:"
+              quilt applied | grep "^custom/"
+            fi
+          fi
+          
+          echo ""
+          echo "Final patch: $(quilt top)"
+
+      - name: Rename Xanmod BBR to BBRv3
+        if: steps.check_patches.outputs.XANMOD_AVAILABLE == 'true'
+        run: |
+          cd linux
+          
+          echo "=== Renaming Xanmod BBR to BBRv3 ==="
+          
+          if [ ! -f "net/ipv4/tcp_bbr.c" ]; then
+            echo "⚠️ tcp_bbr.c not found, skipping rename"
+            exit 0
+          fi
+          
+          echo "Original BBR registration:"
+          grep -B 3 -A 3 "\.name.*=.*\"bbr\"" net/ipv4/tcp_bbr.c | head -20
+          
+          # 使用 Perl 替换算法名称
+          perl -i -pe 's/(\.name\s*=\s*)"bbr"/$1"bbrv3"/g' net/ipv4/tcp_bbr.c
+          
+          echo ""
+          echo "Modified BBR registration:"
+          grep -B 3 -A 3 "\.name.*=.*\"bbrv3\"" net/ipv4/tcp_bbr.c | head -20
+          
+          # 验证修改
+          if grep -q '\.name\s*=\s*"bbrv3"' net/ipv4/tcp_bbr.c; then
             echo ""
-            echo "✅ All patches applied successfully!"
+            echo "✅ Successfully renamed Xanmod BBR to bbrv3"
           else
             echo ""
-            echo "⚠️ Some patches failed, but continuing..."
+            echo "❌ WARNING: Rename may have failed"
+            exit 1
           fi
           
-          echo ""
-          echo "=== Patch Statistics ==="
-          
-          APPLIED_TOTAL=$(quilt applied | wc -l)
-          echo "Total applied: $APPLIED_TOTAL / $TOTAL_IN_SERIES"
-          
-          # 检查自定义补丁
-          CUSTOM_EXPECTED=$(grep -c "^custom/" patches/series)
-          CUSTOM_APPLIED=$(quilt applied | grep -c "^custom/" || echo 0)
-          
-          echo "Custom patches: $CUSTOM_APPLIED / $CUSTOM_EXPECTED"
-          
-          if [ $CUSTOM_APPLIED -gt 0 ]; then
-            echo ""
-            echo "✅ Applied custom patches:"
-            quilt applied | grep "^custom/"
+          # 修改 Kconfig 描述（可选）
+          if grep -q "config TCP_CONG_BBR" net/ipv4/Kconfig; then
+            perl -i -pe 's/(config TCP_CONG_BBR.*?)BBR TCP/$1BBR v3 TCP/gs' net/ipv4/Kconfig
+            echo "✅ Updated Kconfig description"
           fi
-          
-          # 显示当前补丁位置
-          echo ""
-          echo "Current patch position:"
-          quilt top
 
       - name: Configure Kernel
         run: |
@@ -350,21 +349,28 @@ jobs:
           echo "=== Configuring TCP Congestion Control ==="
           
           if [ "${{ steps.check_patches.outputs.XANMOD_AVAILABLE }}" == "true" ]; then
+            # 启用 BBRv3 (CONFIG_TCP_CONG_BBR) 作为内建
             scripts/config --enable CONFIG_TCP_CONG_BBR
-            scripts/config --enable CONFIG_TCP_CONG_BBRPLUS || echo "⚠️ BBRPlus not available"
-            scripts/config --enable CONFIG_TCP_CONG_BRUTAL || echo "⚠️ Brutal not available"
             
-            scripts/config --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
+            # 其他 BBR 变体作为模块
+            scripts/config --module CONFIG_TCP_CONG_BBR1 || echo "⚠️ BBR1 not available"
+            scripts/config --module CONFIG_TCP_CONG_BBRPLUS || echo "⚠️ BBRPlus not available"
+            scripts/config --module CONFIG_TCP_CONG_BRUTAL || echo "⚠️ Brutal not available"
+            
+            # 设置 bbrv3 为默认算法
+            scripts/config --set-str CONFIG_DEFAULT_TCP_CONG "bbrv3"
             scripts/config --enable CONFIG_DEFAULT_BBR
             scripts/config --disable CONFIG_DEFAULT_CUBIC
+            
+            echo "✅ Configured BBRv3 as default congestion control"
           else
             echo "⚠️ Xanmod patches not available, skipping BBR configuration"
           fi
           
+          echo ""
           echo "=== Disabling BTF to prevent build failures ==="
           scripts/config --disable CONFIG_DEBUG_INFO_BTF
           scripts/config --disable CONFIG_DEBUG_INFO_BTF_MODULES
-          
           scripts/config --disable CONFIG_DEBUG_INFO
           scripts/config --disable CONFIG_DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT
           
@@ -391,13 +397,51 @@ jobs:
           
           if [ "${{ steps.check_patches.outputs.XANMOD_AVAILABLE }}" == "true" ]; then
             echo ""
-            echo "Checking BBR configuration:"
-            grep "CONFIG_TCP_CONG_BBR" .config | grep -v "^#" || echo "⚠️ No BBR config found"
-            grep "CONFIG_DEFAULT_TCP_CONG" .config | grep -v "^#" || echo "⚠️ No default congestion control set"
+            echo "Checking BBR variants configuration:"
+            echo "BBR (will be bbrv3):"
+            grep "CONFIG_TCP_CONG_BBR=" .config | grep -v "^#"
+            
+            echo ""
+            echo "Other variants:"
+            grep "CONFIG_TCP_CONG_BBR1\|CONFIG_TCP_CONG_BBRPLUS\|CONFIG_TCP_CONG_BRUTAL" .config | grep -v "^#" || echo "(not found)"
+            
+            echo ""
+            echo "Default congestion control:"
+            if grep -q 'CONFIG_DEFAULT_TCP_CONG="bbrv3"' .config; then
+              echo "✅ BBRv3 is set as default"
+            else
+              echo "Current default:"
+              grep "CONFIG_DEFAULT_TCP_CONG" .config | grep -v "^#"
+            fi
           fi
           
           echo ""
           echo "================================================"
+
+      - name: Verify BBRv3 Source Code
+        if: steps.check_patches.outputs.XANMOD_AVAILABLE == 'true'
+        run: |
+          cd linux
+          
+          echo "=== Verifying BBRv3 Implementation ==="
+          
+          if [ -f "net/ipv4/tcp_bbr.c" ]; then
+            echo "Checking algorithm name in tcp_bbr.c:"
+            if grep -q '\.name\s*=\s*"bbrv3"' net/ipv4/tcp_bbr.c; then
+              echo "✅ BBR correctly renamed to bbrv3"
+              grep -B 2 -A 5 '\.name\s*=\s*"bbrv3"' net/ipv4/tcp_bbr.c | head -10
+            else
+              echo "❌ ERROR: BBR not renamed to bbrv3"
+              grep -B 2 -A 5 '\.name.*=.*"bbr' net/ipv4/tcp_bbr.c | head -10
+              exit 1
+            fi
+          else
+            echo "⚠️ tcp_bbr.c not found"
+          fi
+          
+          echo ""
+          echo "All BBR variant files:"
+          ls -la net/ipv4/tcp_bbr*.c net/ipv4/tcp_brutal.c 2>/dev/null || echo "Some files not found"
 
       - name: Build Kernel Debian Packages
         env:
@@ -407,7 +451,7 @@ jobs:
         run: |
           cd linux
           make -j $(nproc) bindeb-pkg
-      
+
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -417,7 +461,7 @@ jobs:
             *.changes
             *.buildinfo
             *.config
-      
+
       - name: Get build time
         id: get_build_time
         run: |
