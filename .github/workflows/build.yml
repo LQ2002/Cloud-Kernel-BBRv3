@@ -36,7 +36,7 @@ jobs:
           fi
           KERNEL_MINOR_VERSION=$(echo "$KERNEL_VERSION" | cut -d '.' -f 2)
           KERNEL_MAJOR_VERSION=$(echo "$KERNEL_VERSION" | cut -d '.' -f 1)
-          SKIP_CACHE="${{ inputs.skip_cache }}" || SKIP_CACHE=false
+          SKIP_CACHE="${{ inputs. skip_cache }}" || SKIP_CACHE=false
 
           echo "KERNEL_VERSION=$KERNEL_VERSION" >> $GITHUB_OUTPUT
           echo "KERNEL_MINOR_VERSION=$KERNEL_MINOR_VERSION" >> $GITHUB_OUTPUT
@@ -68,7 +68,7 @@ jobs:
       - name: Download Linux Kernel Source
         run: |
           wget https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-${{ needs.prepare.outputs.kernel_version }}.tar.xz
-          tar -xf linux-${{ needs.prepare.outputs.kernel_version }}.tar. xz
+          tar -xf linux-${{ needs.prepare. outputs.kernel_version }}.tar.xz
           rm linux-${{ needs.prepare.outputs.kernel_version }}.tar. xz
           mv linux-${{ needs.prepare. outputs.kernel_version }} linux
 
@@ -133,9 +133,9 @@ jobs:
           git clone -b debian/${{ needs.prepare.outputs.kernel_version }}-1 --depth=1 https://salsa.debian.org/kernel-team/linux.git linux-debian
 
       - name: Download Xanmod Network Patches (BBR/BBRv3)
-        if: steps. check_patches.outputs.XANMOD_AVAILABLE == 'true'
+        if: steps.check_patches.outputs. XANMOD_AVAILABLE == 'true'
         run: |
-          git clone --depth=1 https://gitlab. com/xanmod/linux-patches.git linux-xanmod-patches
+          git clone --depth=1 https://gitlab.com/xanmod/linux-patches.git linux-xanmod-patches
 
       - name: Checkout Bore Scheduler Patches
         if: steps.check_patches.outputs.BORE_AVAILABLE == 'true'
@@ -184,7 +184,7 @@ jobs:
           
           echo ""
           echo "=== Step 4: Copy custom patches ==="
-          CUSTOM_SOURCE="../kernel_patches/${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs. kernel_minor_version }}"
+          CUSTOM_SOURCE="../kernel_patches/${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}"
           
           echo "Looking for custom patches in: $CUSTOM_SOURCE"
           
@@ -226,7 +226,7 @@ jobs:
           
           # 如果 Debian 补丁不可用，创建新的 series 文件
           if [ "${{ steps.check_patches.outputs.DEBIAN_AVAILABLE }}" != "true" ]; then
-            echo "# Patch series for kernel ${{ needs.prepare.outputs.kernel_version }}" > series
+            echo "# Patch series for kernel ${{ needs.prepare.outputs. kernel_version }}" > series
             echo "# Generated at $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> series
           fi
           
@@ -429,7 +429,7 @@ jobs:
             echo ""
             echo "Checking BBR configuration:"
             grep "CONFIG_TCP_CONG_BBR" .config | grep -v "^#" || echo "⚠️ No BBR config found"
-            grep "CONFIG_DEFAULT_TCP_CONG" .config | grep -v "^#" || echo "⚠️ No default congestion control set"
+            grep "CONFIG_DEFAULT_TCP_CONG" . config | grep -v "^#" || echo "⚠️ No default congestion control set"
           fi
           
           echo ""
