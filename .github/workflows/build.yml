@@ -72,73 +72,66 @@ jobs:
           rm linux-${{ needs.prepare.outputs.kernel_version }}.tar.xz
           mv linux-${{ needs.prepare.outputs.kernel_version }} linux
 
-      - name: Check Patch Compatibility
-        id: check_patches
+      - name: Download and Check Patches
         run: |
-          KERNEL_VERSION="${{ needs.prepare.outputs.kernel_version }}"
-          KERNEL_MAJOR="${{ needs.prepare.outputs.kernel_major_version }}"
-          KERNEL_MINOR="${{ needs.prepare.outputs.kernel_minor_version }}"
-          
-          echo "=== Checking patch availability for kernel $KERNEL_VERSION ==="
+          echo "=== Downloading patches for kernel ${{ needs.prepare.outputs.kernel_version }} ==="
           echo ""
           
-          echo "Checking Debian kernel patches..."
-          DEBIAN_BRANCH="debian/$KERNEL_VERSION-1"
-          if git ls-remote --exit-code --heads https://salsa.debian.org/kernel-team/linux.git "$DEBIAN_BRANCH" > /dev/null 2>&1; then
-            echo "✅ Debian patches available: $DEBIAN_BRANCH"
-            echo "DEBIAN_AVAILABLE=true" >> $GITHUB_OUTPUT
+          # Debian 补丁
+          echo "Downloading Debian kernel patches..."
+          if git clone -b debian/${{ needs.prepare.outputs.kernel_version }}-1 --depth=1 https://salsa.debian.org/kernel-team/linux.git linux-debian 2>&1; then
+            echo "✅ Debian patches downloaded successfully"
+            echo "DEBIAN_OK=true" >> $GITHUB_ENV
           else
-            echo "⚠️ Debian patches NOT available for $KERNEL_VERSION"
-            echo "DEBIAN_AVAILABLE=false" >> $GITHUB_OUTPUT
+            echo "⚠️ Debian patches not available (this is normal for newer kernels)"
+            echo "DEBIAN_OK=false" >> $GITHUB_ENV
           fi
           
           echo ""
           
-          git clone --depth=1 https://gitlab.com/xanmod/linux-patches.git xanmod-check
-          if ls xanmod-check/ | grep -q "linux-$KERNEL_MAJOR\.$KERNEL_MINOR"; then
-            echo "✅ Xanmod patches available"
-            echo "XANMOD_AVAILABLE=true" >> $GITHUB_OUTPUT
+          # Xanmod 补丁
+          echo "Downloading Xanmod network patches..."
+          if git clone --depth=1 https://gitlab.com/xanmod/linux-patches.git linux-xanmod-patches 2>&1; then
+            XANMOD_DIR="linux-xanmod-patches/linux-${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}.y-xanmod"
+            if [ -d "$XANMOD_DIR" ]; then
+              echo "✅ Xanmod patches downloaded successfully"
+              echo "XANMOD_OK=true" >> $GITHUB_ENV
+            else
+              echo "⚠️ Xanmod patches not available for kernel ${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}"
+              echo "Available versions:"
+              ls linux-xanmod-patches/ | grep "linux-" | sort -V
+              echo "XANMOD_OK=false" >> $GITHUB_ENV
+            fi
           else
-            echo "❌ Xanmod patches NOT available"
-            echo "Available versions:"
-            ls xanmod-check/ | grep "linux-" | sort -V
-            echo "XANMOD_AVAILABLE=false" >> $GITHUB_OUTPUT
+            echo "❌ Failed to download Xanmod patches repository"
+            echo "XANMOD_OK=false" >> $GITHUB_ENV
           fi
           
           echo ""
           
-          git clone --depth=1 https://github.com/firelzrd/bore-scheduler.git bore-check
-          if ls bore-check/patches/stable/ | grep -q "linux-$KERNEL_MAJOR\.$KERNEL_MINOR"; then
-            echo "✅ Bore patches available"
-            echo "BORE_AVAILABLE=true" >> $GITHUB_OUTPUT
+          # Bore 补丁
+          echo "Downloading Bore scheduler patches..."
+          if git clone --depth=1 https://github.com/firelzrd/bore-scheduler.git bore-patches 2>&1; then
+            BORE_DIR="bore-patches/patches/stable/linux-${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}-bore"
+            if [ -d "$BORE_DIR" ]; then
+              echo "✅ Bore patches downloaded successfully"
+              echo "BORE_OK=true" >> $GITHUB_ENV
+            else
+              echo "⚠️ Bore patches not available for kernel ${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}"
+              echo "Available versions:"
+              ls bore-patches/patches/stable/ | grep "linux-" | sort -V
+              echo "BORE_OK=false" >> $GITHUB_ENV
+            fi
           else
-            echo "❌ Bore patches NOT available"
-            echo "Available versions:"
-            ls bore-check/patches/stable/ | grep "linux-" | sort -V
-            echo "BORE_AVAILABLE=false" >> $GITHUB_OUTPUT
+            echo "❌ Failed to download Bore patches repository"
+            echo "BORE_OK=false" >> $GITHUB_ENV
           fi
           
-          rm -rf xanmod-check bore-check
-          
           echo ""
-          echo "=== Patch compatibility check complete ==="
-
-      - name: Download Debian Kernel Patches
-        if: steps.check_patches.outputs.DEBIAN_AVAILABLE == 'true'
-        run: |
-          git clone -b debian/${{ needs.prepare.outputs.kernel_version }}-1 --depth=1 https://salsa.debian.org/kernel-team/linux.git linux-debian
-
-      - name: Download Xanmod Network Patches (BBR/BBRv3)
-        if: steps.check_patches.outputs.XANMOD_AVAILABLE == 'true'
-        run: |
-          git clone --depth=1 https://gitlab.com/xanmod/linux-patches.git linux-xanmod-patches
-
-      - name: Checkout Bore Scheduler Patches
-        if: steps.check_patches.outputs.BORE_AVAILABLE == 'true'
-        uses: actions/checkout@v4
-        with:
-          repository: firelzrd/bore-scheduler
-          path: bore-patches
+          echo "=== Patch download summary ==="
+          echo "Debian: $DEBIAN_OK"
+          echo "Xanmod: $XANMOD_OK"
+          echo "Bore: $BORE_OK"
 
       - name: Organize Patches
         run: |
@@ -146,17 +139,17 @@ jobs:
           mkdir -p patches
           
           echo "=== Step 1: Copy Debian patches ==="
-          if [ "${{ steps.check_patches.outputs.DEBIAN_AVAILABLE }}" == "true" ]; then
+          if [ "$DEBIAN_OK" == "true" ] && [ -d "../linux-debian/debian/patches" ]; then
             cp -R ../linux-debian/debian/patches/* ./patches/
             echo "✅ Debian patches copied"
           else
             touch patches/series
-            echo "⚠️ Debian patches not available"
+            echo "⚠️ Debian patches not available, creating empty series"
           fi
           
           echo ""
           echo "=== Step 2: Copy Xanmod patches ==="
-          if [ "${{ steps.check_patches.outputs.XANMOD_AVAILABLE }}" == "true" ]; then
+          if [ "$XANMOD_OK" == "true" ]; then
             XANMOD_SOURCE="../linux-xanmod-patches/linux-${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}.y-xanmod"
             
             if [ -d "$XANMOD_SOURCE/net" ]; then
@@ -168,11 +161,13 @@ jobs:
             else
               echo "⚠️ Xanmod net directory not found"
             fi
+          else
+            echo "⚠️ Xanmod patches not available, skipping"
           fi
           
           echo ""
           echo "=== Step 3: Copy Bore patches ==="
-          if [ "${{ steps.check_patches.outputs.BORE_AVAILABLE }}" == "true" ]; then
+          if [ "$BORE_OK" == "true" ]; then
             BORE_SOURCE="../bore-patches/patches/stable/linux-${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}-bore"
             
             if [ -d "$BORE_SOURCE" ]; then
@@ -183,6 +178,8 @@ jobs:
             else
               echo "⚠️ Bore directory not found"
             fi
+          else
+            echo "⚠️ Bore patches not available, skipping"
           fi
           
           echo ""
@@ -205,32 +202,36 @@ jobs:
             CUSTOM_COUNT=$(find patches/custom -type f -name "*.patch" | wc -l)
             echo "✅ Total custom patches: $CUSTOM_COUNT"
           else
-            echo "⚠️ Custom patch directory not found"
+            echo "⚠️ Custom patch directory not found: $CUSTOM_SOURCE"
           fi
           
           echo ""
           echo "=== Step 5: Build series file ==="
           cd patches
           
-          if [ "${{ steps.check_patches.outputs.DEBIAN_AVAILABLE }}" != "true" ]; then
+          if [ "$DEBIAN_OK" != "true" ]; then
             echo "# Patch series for kernel ${{ needs.prepare.outputs.kernel_version }}" > series
             echo "# Generated at $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> series
           fi
           
           if [ -d "./xanmod-net" ]; then
             XANMOD_PATCH_COUNT=$(find ./xanmod-net -type f -name "*.patch" | wc -l)
-            echo "" >> series
-            echo "# Xanmod Network Patches ($XANMOD_PATCH_COUNT patches)" >> series
-            find ./xanmod-net -type f -name "*.patch" -printf "xanmod-net/%P\n" | sort >> series
-            echo "Added $XANMOD_PATCH_COUNT Xanmod patches to series"
+            if [ $XANMOD_PATCH_COUNT -gt 0 ]; then
+              echo "" >> series
+              echo "# Xanmod Network Patches ($XANMOD_PATCH_COUNT patches)" >> series
+              find ./xanmod-net -type f -name "*.patch" -printf "xanmod-net/%P\n" | sort >> series
+              echo "Added $XANMOD_PATCH_COUNT Xanmod patches to series"
+            fi
           fi
           
           if [ -d "./cpu-scheduler" ]; then
             BORE_PATCH_COUNT=$(find ./cpu-scheduler -type f -name "*.patch" | wc -l)
-            echo "" >> series
-            echo "# Bore CPU Scheduler Patches ($BORE_PATCH_COUNT patches)" >> series
-            find ./cpu-scheduler -type f -name "*.patch" -printf "cpu-scheduler/%P\n" | sort >> series
-            echo "Added $BORE_PATCH_COUNT Bore patches to series"
+            if [ $BORE_PATCH_COUNT -gt 0 ]; then
+              echo "" >> series
+              echo "# Bore CPU Scheduler Patches ($BORE_PATCH_COUNT patches)" >> series
+              find ./cpu-scheduler -type f -name "*.patch" -printf "cpu-scheduler/%P\n" | sort >> series
+              echo "Added $BORE_PATCH_COUNT Bore patches to series"
+            fi
           fi
           
           if [ -d "./custom" ]; then
@@ -282,15 +283,15 @@ jobs:
           echo ""
           echo "=== Patch Summary ==="
           
-          TOTAL_EXPECTED=$(grep -c "\.patch$" patches/series)
-          TOTAL_APPLIED=$(quilt applied | wc -l)
+          TOTAL_EXPECTED=$(grep -c "\.patch$" patches/series || echo 0)
+          TOTAL_APPLIED=$(quilt applied 2>/dev/null | wc -l || echo 0)
           
           echo "Total: $TOTAL_APPLIED / $TOTAL_EXPECTED applied"
           
           CUSTOM_EXPECTED=$(grep -c "^custom/" patches/series || echo 0)
           
           if [ $CUSTOM_EXPECTED -gt 0 ]; then
-            CUSTOM_APPLIED=$(quilt applied | grep -c "^custom/" || echo 0)
+            CUSTOM_APPLIED=$(quilt applied 2>/dev/null | grep -c "^custom/" || echo 0)
             
             echo "Custom patches: $CUSTOM_APPLIED / $CUSTOM_EXPECTED"
             
@@ -304,7 +305,7 @@ jobs:
           echo "Final patch: $(quilt top)"
 
       - name: Rename Xanmod BBR to BBRv3
-        if: steps.check_patches.outputs.XANMOD_AVAILABLE == 'true'
+        if: env.XANMOD_OK == 'true'
         run: |
           cd linux
           
@@ -348,7 +349,7 @@ jobs:
           
           echo "=== Configuring TCP Congestion Control ==="
           
-          if [ "${{ steps.check_patches.outputs.XANMOD_AVAILABLE }}" == "true" ]; then
+          if [ "$XANMOD_OK" == "true" ]; then
             # 启用 BBRv3 (CONFIG_TCP_CONG_BBR) 作为内建
             scripts/config --enable CONFIG_TCP_CONG_BBR
             
@@ -395,7 +396,7 @@ jobs:
             grep "CONFIG_DEBUG_INFO_BTF" .config || true
           fi
           
-          if [ "${{ steps.check_patches.outputs.XANMOD_AVAILABLE }}" == "true" ]; then
+          if [ "$XANMOD_OK" == "true" ]; then
             echo ""
             echo "Checking BBR variants configuration:"
             echo "BBR (will be bbrv3):"
@@ -419,7 +420,7 @@ jobs:
           echo "================================================"
 
       - name: Verify BBRv3 Source Code
-        if: steps.check_patches.outputs.XANMOD_AVAILABLE == 'true'
+        if: env.XANMOD_OK == 'true'
         run: |
           cd linux
           
