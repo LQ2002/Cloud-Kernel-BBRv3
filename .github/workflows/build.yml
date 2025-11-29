@@ -407,9 +407,9 @@ jobs:
         run: |
           cd linux
           make -j $(nproc) bindeb-pkg
-
+      
       - name: Upload Artifacts
-        uses: actions/checkout@v4
+        uses: actions/upload-artifact@v4
         with:
           name: kernel-x86_64
           path: |
@@ -417,7 +417,7 @@ jobs:
             *.changes
             *.buildinfo
             *.config
-
+      
       - name: Get build time
         id: get_build_time
         run: |
