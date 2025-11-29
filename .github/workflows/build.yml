@@ -69,7 +69,7 @@ jobs:
         run: |
           wget https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-${{ needs.prepare.outputs.kernel_version }}.tar.xz
           tar -xf linux-${{ needs.prepare. outputs.kernel_version }}.tar.xz
-          rm linux-${{ needs.prepare.outputs.kernel_version }}.tar. xz
+          rm linux-${{ needs.prepare.outputs.kernel_version }}.tar.xz
           mv linux-${{ needs.prepare. outputs.kernel_version }} linux
 
       - name: Check Patch Compatibility
