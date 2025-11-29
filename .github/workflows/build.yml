@@ -21,10 +21,10 @@ jobs:
     name: Prepare Build Parameters
     runs-on: ubuntu-24.04
     outputs:
-      kernel_version: ${{ steps.prepare_build_parameters.outputs.KERNEL_VERSION }}
+      kernel_version: ${{ steps.prepare_build_parameters.outputs. KERNEL_VERSION }}
       kernel_minor_version: ${{ steps.prepare_build_parameters.outputs.KERNEL_MINOR_VERSION }}
-      kernel_major_version: ${{ steps.prepare_build_parameters.outputs.KERNEL_MAJOR_VERSION }}
-      skip_cache: ${{ steps.prepare_build_parameters.outputs.SKIP_CACHE }}
+      kernel_major_version: ${{ steps.prepare_build_parameters.outputs. KERNEL_MAJOR_VERSION }}
+      skip_cache: ${{ steps.prepare_build_parameters.outputs. SKIP_CACHE }}
     steps:
       - name: Prepare Build Parameters
         id: prepare_build_parameters
@@ -68,9 +68,9 @@ jobs:
       - name: Download Linux Kernel Source
         run: |
           wget https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-${{ needs.prepare.outputs.kernel_version }}.tar.xz
-          tar -xf linux-${{ needs.prepare.outputs.kernel_version }}.tar.xz
-          rm linux-${{ needs.prepare.outputs.kernel_version }}.tar.xz
-          mv linux-${{ needs.prepare.outputs.kernel_version }} linux
+          tar -xf linux-${{ needs.prepare.outputs.kernel_version }}.tar. xz
+          rm linux-${{ needs.prepare.outputs.kernel_version }}.tar. xz
+          mv linux-${{ needs.prepare. outputs.kernel_version }} linux
 
       - name: Check Patch Compatibility
         id: check_patches
@@ -85,7 +85,7 @@ jobs:
           # 检查 Debian 补丁
           echo "Checking Debian kernel patches..."
           DEBIAN_BRANCH="debian/$KERNEL_VERSION-1"
-          if git ls-remote --exit-code --heads https://salsa.debian.org/kernel-team/linux.git "$DEBIAN_BRANCH" > /dev/null 2>&1; then
+          if git ls-remote --exit-code --heads https://salsa.debian.org/kernel-team/linux. git "$DEBIAN_BRANCH" > /dev/null 2>&1; then
             echo "✅ Debian patches available: $DEBIAN_BRANCH"
             echo "DEBIAN_AVAILABLE=true" >> $GITHUB_OUTPUT
           else
@@ -128,14 +128,14 @@ jobs:
           echo "=== Patch compatibility check complete ==="
 
       - name: Download Debian Kernel Patches
-        if: steps.check_patches.outputs.DEBIAN_AVAILABLE == 'true'
+        if: steps.check_patches.outputs. DEBIAN_AVAILABLE == 'true'
         run: |
           git clone -b debian/${{ needs.prepare.outputs.kernel_version }}-1 --depth=1 https://salsa.debian.org/kernel-team/linux.git linux-debian
 
       - name: Download Xanmod Network Patches (BBR/BBRv3)
-        if: steps.check_patches.outputs.XANMOD_AVAILABLE == 'true'
+        if: steps. check_patches.outputs.XANMOD_AVAILABLE == 'true'
         run: |
-          git clone --depth=1 https://gitlab.com/xanmod/linux-patches.git linux-xanmod-patches
+          git clone --depth=1 https://gitlab. com/xanmod/linux-patches.git linux-xanmod-patches
 
       - name: Checkout Bore Scheduler Patches
         if: steps.check_patches.outputs.BORE_AVAILABLE == 'true'
@@ -149,98 +149,233 @@ jobs:
           cd linux
           mkdir -p patches
           
-          # 复制 Debian 补丁（如果可用）
-          if [ "${{ steps.check_patches.outputs.DEBIAN_AVAILABLE }}" == "true" ]; then
-            echo "Copying Debian patches..."
+          echo "=== Step 1: Copy Debian patches ==="
+          if [ "${{ steps.check_patches.outputs. DEBIAN_AVAILABLE }}" == "true" ]; then
             cp -R ../linux-debian/debian/patches/* ./patches/
+            echo "✅ Debian patches copied"
           else
-            echo "⚠️ Skipping Debian patches (not available)"
-            # 创建空的 series 文件
             touch patches/series
+            echo "⚠️ Debian patches not available"
           fi
           
-          # 复制 Xanmod 补丁（如果可用）
+          echo ""
+          echo "=== Step 2: Copy Xanmod patches ==="
           if [ "${{ steps.check_patches.outputs.XANMOD_AVAILABLE }}" == "true" ]; then
-            echo "Copying Xanmod patches..."
-            cp -R ../linux-xanmod-patches/linux-${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}.y-xanmod/net ./patches/net
+            # 复制 Xanmod 的 net 目录，但保留目录结构
+            mkdir -p patches/xanmod-net
+            cp -R ../linux-xanmod-patches/linux-${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}. y-xanmod/net/* patches/xanmod-net/
+            
+            XANMOD_COUNT=$(find patches/xanmod-net -type f -name "*.patch" | wc -l)
+            echo "✅ Copied $XANMOD_COUNT Xanmod patches"
+            
+            # 显示 Xanmod 补丁结构
+            echo "Xanmod patch structure:"
+            find patches/xanmod-net -type f -name "*.patch" | head -10
           fi
           
-          # 复制 Bore 补丁（如果可用）
+          echo ""
+          echo "=== Step 3: Copy Bore patches ==="
           if [ "${{ steps.check_patches.outputs.BORE_AVAILABLE }}" == "true" ]; then
-            echo "Copying Bore patches..."
-            cp -R ../bore-patches/patches/stable/linux-${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}-bore ./patches/cpu-scheduler
+            cp -R ../bore-patches/patches/stable/linux-${{ needs.prepare. outputs.kernel_major_version }}.${{ needs.prepare.outputs. kernel_minor_version }}-bore patches/cpu-scheduler
+            
+            BORE_COUNT=$(find patches/cpu-scheduler -type f -name "*.patch" | wc -l)
+            echo "✅ Copied $BORE_COUNT Bore patches"
           fi
           
-          # 复制自定义补丁
-          mkdir -p patches/custom
-          if [ -d "../kernel_patches/${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}" ]; then
-            echo "Copying custom patches..."
-            cp -R ../kernel_patches/${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}/* patches/custom/
+          echo ""
+          echo "=== Step 4: Copy custom patches ==="
+          CUSTOM_SOURCE="../kernel_patches/${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs. kernel_minor_version }}"
+          
+          echo "Looking for custom patches in: $CUSTOM_SOURCE"
+          
+          if [ -d "$CUSTOM_SOURCE" ]; then
+            echo "✅ Custom patch directory found"
+            echo ""
+            echo "Directory structure:"
+            tree -L 3 "$CUSTOM_SOURCE" || find "$CUSTOM_SOURCE" -type f -name "*.patch"
+            
+            # 复制自定义补丁
+            mkdir -p patches/custom
+            cp -R "$CUSTOM_SOURCE"/* patches/custom/
+            
+            echo ""
+            echo "Copied custom patches to patches/custom:"
+            find patches/custom -type f -name "*.patch" | while read f; do
+              echo "  - $f"
+            done
+            
+            CUSTOM_COUNT=$(find patches/custom -type f -name "*.patch" | wc -l)
+            echo ""
+            echo "✅ Total custom patches: $CUSTOM_COUNT"
+            
+            if [ $CUSTOM_COUNT -eq 0 ]; then
+              echo "❌ ERROR: No . patch files found in custom directory!"
+              echo "Files in custom directory:"
+              find patches/custom -type f
+            fi
+          else
+            echo "❌ ERROR: Custom patch directory not found: $CUSTOM_SOURCE"
+            echo ""
+            echo "Available directories in kernel_patches:"
+            ls -la ../kernel_patches/ || echo "kernel_patches directory doesn't exist"
           fi
           
-          # 更新 series 文件
+          echo ""
+          echo "=== Step 5: Build series file ==="
           cd patches
           
-          # 如果 Debian 补丁不可用，series 文件可能是空的，需要从头开始
+          # 如果 Debian 补丁不可用，创建新的 series 文件
           if [ "${{ steps.check_patches.outputs.DEBIAN_AVAILABLE }}" != "true" ]; then
             echo "# Patch series for kernel ${{ needs.prepare.outputs.kernel_version }}" > series
+            echo "# Generated at $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> series
           fi
           
           # 添加 Xanmod 补丁
-          if [ "${{ steps.check_patches.outputs.XANMOD_AVAILABLE }}" == "true" ] && [ -d "./net" ]; then
+          if [ -d "./xanmod-net" ]; then
+            XANMOD_PATCH_COUNT=$(find ./xanmod-net -type f -name "*.patch" | wc -l)
             echo "" >> series
-            echo "# Net Patches from Xanmod" >> series
-            find ./net -type f -name "*.patch" -printf "net/%P\n" | sort >> series
+            echo "# Xanmod Network Patches ($XANMOD_PATCH_COUNT patches)" >> series
+            find ./xanmod-net -type f -name "*.patch" -printf "xanmod-net/%P\n" | sort >> series
+            echo "Added $XANMOD_PATCH_COUNT Xanmod patches to series"
           fi
           
           # 添加 Bore 补丁
-          if [ "${{ steps.check_patches.outputs.BORE_AVAILABLE }}" == "true" ] && [ -d "./cpu-scheduler" ]; then
+          if [ -d "./cpu-scheduler" ]; then
+            BORE_PATCH_COUNT=$(find ./cpu-scheduler -type f -name "*.patch" | wc -l)
             echo "" >> series
-            echo "# CPU Scheduler Patches from Bore" >> series
+            echo "# Bore CPU Scheduler Patches ($BORE_PATCH_COUNT patches)" >> series
             find ./cpu-scheduler -type f -name "*.patch" -printf "cpu-scheduler/%P\n" | sort >> series
+            echo "Added $BORE_PATCH_COUNT Bore patches to series"
           fi
           
-          # 添加自定义补丁
-          if [ -d "./custom" ] && [ "$(ls -A ./custom 2>/dev/null)" ]; then
-            echo "" >> series
-            echo "# Custom Patches" >> series
-            find ./custom -type f -name "*.patch" -printf "custom/%P\n" | sort >> series
+          # 添加自定义补丁 - 关键部分！
+          if [ -d "./custom" ]; then
+            CUSTOM_PATCH_COUNT=$(find ./custom -type f -name "*. patch" | wc -l)
+            
+            if [ $CUSTOM_PATCH_COUNT -gt 0 ]; then
+              echo "" >> series
+              echo "# Custom Patches ($CUSTOM_PATCH_COUNT patches)" >> series
+              
+              # 递归查找所有 . patch 文件并添加到 series
+              find ./custom -type f -name "*.patch" -printf "custom/%P\n" | sort >> series
+              
+              echo "✅ Added $CUSTOM_PATCH_COUNT custom patches to series"
+              
+              # 显示添加的自定义补丁
+              echo ""
+              echo "Custom patches in series:"
+              grep "^custom/" series | nl
+            else
+              echo "❌ ERROR: custom directory exists but contains no . patch files!"
+            fi
+          else
+            echo "❌ ERROR: custom directory not found!"
           fi
           
-          # 显示 series 文件内容用于调试
           echo ""
-          echo "=== Patch series content ==="
+          echo "=== Final series file content ==="
           cat series
-          echo "==========================="
+          echo "=================================="
+          
+          echo ""
+          echo "=== Statistics ==="
+          TOTAL_PATCHES=$(grep -c "\. patch$" series || echo 0)
+          XANMOD_IN_SERIES=$(grep -c "^xanmod-net/" series || echo 0)
+          BORE_IN_SERIES=$(grep -c "^cpu-scheduler/" series || echo 0)
+          CUSTOM_IN_SERIES=$(grep -c "^custom/" series || echo 0)
+          
+          echo "Total patches in series: $TOTAL_PATCHES"
+          echo "  - Xanmod: $XANMOD_IN_SERIES"
+          echo "  - Bore: $BORE_IN_SERIES"
+          echo "  - Custom: $CUSTOM_IN_SERIES"
+          echo "=================="
+          
+          # 如果没有自定义补丁，报错
+          if [ $CUSTOM_IN_SERIES -eq 0 ]; then
+            echo ""
+            echo "❌ FATAL ERROR: No custom patches in series file!"
+            echo "This means your custom patches will NOT be applied."
+            exit 1
+          fi
 
       - name: Apply Patches
         run: |
           cd linux
           
-          # 检查是否有补丁需要应用
-          if [ ! -s patches/series ]; then
+          if [ !  -s patches/series ]; then
             echo "⚠️ No patches to apply (series file is empty)"
             exit 0
           fi
           
+          TOTAL_IN_SERIES=$(grep -c "\. patch$" patches/series || echo 0)
+          echo "=== Applying $TOTAL_IN_SERIES patches ==="
+          echo ""
+          
           # 应用补丁
-          echo "Applying patches..."
-          quilt push -a -v || {
+          quilt push -a -v 2>&1 | tee patch-apply.log
+          PATCH_EXIT_CODE=$?
+          
+          echo ""
+          echo "=== Patch Application Complete ==="
+          echo "Exit code: $PATCH_EXIT_CODE"
+          echo ""
+          
+          # 统计成功应用的补丁
+          APPLIED_COUNT=$(quilt applied | wc -l)
+          echo "Applied patches: $APPLIED_COUNT / $TOTAL_IN_SERIES"
+          
+          # 检查自定义补丁是否应用
+          CUSTOM_APPLIED=$(quilt applied | grep -c "^custom/" || echo 0)
+          CUSTOM_EXPECTED=$(grep -c "^custom/" patches/series || echo 0)
+          
+          echo ""
+          echo "Custom patches status:"
+          echo "  Expected: $CUSTOM_EXPECTED"
+          echo "  Applied: $CUSTOM_APPLIED"
+          
+          if [ $CUSTOM_APPLIED -eq 0 ] && [ $CUSTOM_EXPECTED -gt 0 ]; then
             echo ""
-            echo "=== Some patches failed to apply ==="
-            echo "Applied patches:"
-            quilt applied || echo "None"
+            echo "❌ CRITICAL ERROR: Custom patches were NOT applied!"
             echo ""
-            echo "Unapplied patches:"
-            quilt unapplied || echo "None"
+            echo "Expected custom patches:"
+            grep "^custom/" patches/series
             echo ""
-            echo "⚠️ Continuing build with successfully applied patches..."
-          }
+            echo "Checking for failures..."
+            
+            if quilt unapplied | grep -q "^custom/"; then
+              echo ""
+              echo "Failed custom patches:"
+              quilt unapplied | grep "^custom/"
+              
+              # 显示第一个失败补丁的详细信息
+              FIRST_FAILED=$(quilt unapplied | grep "^custom/" | head -1)
+              echo ""
+              echo "=== Details of first failed custom patch: $FIRST_FAILED ==="
+              cat "patches/$FIRST_FAILED" | head -50
+            fi
+            
+            exit 1
+          fi
+          
+          if [ $CUSTOM_APPLIED -eq $CUSTOM_EXPECTED ]; then
+            echo "✅ All custom patches applied successfully!"
+            echo ""
+            echo "Applied custom patches:"
+            quilt applied | grep "^custom/" | nl
+          else
+            echo "⚠️ Some custom patches failed to apply"
+            echo ""
+            echo "Applied:"
+            quilt applied | grep "^custom/"
+            echo ""
+            echo "Failed:"
+            quilt unapplied | grep "^custom/" || echo "(none)"
+          fi
 
       - name: Configure Kernel
         run: |
           cd linux
-          cp ../configs/x86_64.config .config
+          cp ../configs/x86_64. config . config
           
           echo "=== Configuring TCP Congestion Control ==="
           
@@ -290,7 +425,7 @@ jobs:
           fi
           
           # 检查 BBR 配置
-          if [ "${{ steps.check_patches.outputs.XANMOD_AVAILABLE }}" == "true" ]; then
+          if [ "${{ steps.check_patches. outputs.XANMOD_AVAILABLE }}" == "true" ]; then
             echo ""
             echo "Checking BBR configuration:"
             grep "CONFIG_TCP_CONG_BBR" .config | grep -v "^#" || echo "⚠️ No BBR config found"
