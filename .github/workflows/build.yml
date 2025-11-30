@@ -367,7 +367,7 @@ jobs:
             
             echo ""
             echo "Other variants:"
-            grep "CONFIG_TCP_CONG_BBR1\|CONFIG_TCP_CONG_BBR1\|CONFIG_TCP_CONG_BBRPLUS\|CONFIG_TCP_CONG_BRUTAL" .config | grep -v "^#" || echo "(not found)"
+            grep "CONFIG_TCP_CONG_BBR1\|CONFIG_TCP_CONG_BBR2\|CONFIG_TCP_CONG_BBRPLUS\|CONFIG_TCP_CONG_BRUTAL" .config | grep -v "^#" || echo "(not found)"
             
             echo ""
             echo "Default congestion control:"
