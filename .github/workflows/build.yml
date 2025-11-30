@@ -316,9 +316,9 @@ jobs:
             scripts/config --enable CONFIG_TCP_CONG_BBR
             
             # 其他 BBR 变体作为模块
-            scripts/config --module CONFIG_TCP_CONG_BBR1 || echo "⚠️ BBR1 not available"
-            scripts/config --module CONFIG_TCP_CONG_BBRPLUS || echo "⚠️ BBRPlus not available"
-            scripts/config --module CONFIG_TCP_CONG_BRUTAL || echo "⚠️ Brutal not available"
+            scripts/config --enable CONFIG_TCP_CONG_BBR1 || echo "⚠️ BBR1 not available"
+            scripts/config --enable CONFIG_TCP_CONG_BBRPLUS || echo "⚠️ BBRPlus not available"
+            scripts/config --enable CONFIG_TCP_CONG_BRUTAL || echo "⚠️ Brutal not available"
             
             # 设置 bbr 为默认算法
             scripts/config --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
