@@ -317,6 +317,7 @@ jobs:
             
             # 其他 BBR 变体作为内建
             scripts/config --enable CONFIG_TCP_CONG_BBR1 || echo "⚠️ BBR1 not available"
+            scripts/config --enable CONFIG_TCP_CONG_BBR2 || echo "⚠️ BBR2 not available"
             scripts/config --enable CONFIG_TCP_CONG_BBRPLUS || echo "⚠️ BBRPlus not available"
             scripts/config --enable CONFIG_TCP_CONG_BRUTAL || echo "⚠️ Brutal not available"
             
