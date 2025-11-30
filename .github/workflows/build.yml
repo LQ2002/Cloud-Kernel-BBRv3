@@ -381,31 +381,6 @@ jobs:
           echo ""
           echo "================================================"
 
-      - name: Verify BBRv3 Source Code
-        if: env.XANMOD_OK == 'true'
-        run: |
-          cd linux
-          
-          echo "=== Verifying BBRv3 Implementation ==="
-          
-          if [ -f "net/ipv4/tcp_bbr.c" ]; then
-            echo "Checking algorithm name in tcp_bbr.c:"
-            if grep -q '\.name\s*=\s*"bbrv3"' net/ipv4/tcp_bbr.c; then
-              echo "✅ BBR correctly renamed to bbrv3"
-              grep -B 2 -A 5 '\.name\s*=\s*"bbrv3"' net/ipv4/tcp_bbr.c | head -10
-            else
-              echo "❌ ERROR: BBR not renamed to bbrv3"
-              grep -B 2 -A 5 '\.name.*=.*"bbr' net/ipv4/tcp_bbr.c | head -10
-              exit 1
-            fi
-          else
-            echo "⚠️ tcp_bbr.c not found"
-          fi
-          
-          echo ""
-          echo "All BBR variant files:"
-          ls -la net/ipv4/tcp_bbr*.c net/ipv4/tcp_brutal.c 2>/dev/null || echo "Some files not found"
-
       - name: Build Kernel Debian Packages
         env:
           KBUILD_BUILD_USER: "cloudpassenger"
