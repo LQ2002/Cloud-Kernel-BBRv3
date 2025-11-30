@@ -304,44 +304,6 @@ jobs:
           echo ""
           echo "Final patch: $(quilt top)"
 
-      - name: Rename Xanmod BBR to BBRv3
-        if: env.XANMOD_OK == 'true'
-        run: |
-          cd linux
-          
-          echo "=== Renaming Xanmod BBR to BBRv3 ==="
-          
-          if [ ! -f "net/ipv4/tcp_bbr.c" ]; then
-            echo "⚠️ tcp_bbr.c not found, skipping rename"
-            exit 0
-          fi
-          
-          echo "Original BBR registration:"
-          grep -B 3 -A 3 "\.name.*=.*\"bbr\"" net/ipv4/tcp_bbr.c | head -20
-          
-          # 使用 Perl 替换算法名称
-          perl -i -pe 's/(\.name\s*=\s*)"bbr"/$1"bbrv3"/g' net/ipv4/tcp_bbr.c
-          
-          echo ""
-          echo "Modified BBR registration:"
-          grep -B 3 -A 3 "\.name.*=.*\"bbrv3\"" net/ipv4/tcp_bbr.c | head -20
-          
-          # 验证修改
-          if grep -q '\.name\s*=\s*"bbrv3"' net/ipv4/tcp_bbr.c; then
-            echo ""
-            echo "✅ Successfully renamed Xanmod BBR to bbrv3"
-          else
-            echo ""
-            echo "❌ WARNING: Rename may have failed"
-            exit 1
-          fi
-          
-          # 修改 Kconfig 描述（可选）
-          if grep -q "config TCP_CONG_BBR" net/ipv4/Kconfig; then
-            perl -i -pe 's/(config TCP_CONG_BBR.*?)BBR TCP/$1BBR v3 TCP/gs' net/ipv4/Kconfig
-            echo "✅ Updated Kconfig description"
-          fi
-
       - name: Configure Kernel
         run: |
           cd linux
