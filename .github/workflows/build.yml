@@ -220,28 +220,28 @@ jobs:
             
             # 创建 Makefile
             cat > net/ipv4/lotspeed/Makefile << 'EOF'
-            # SPDX-License-Identifier: GPL-2.0
-            obj-$(CONFIG_TCP_CONG_LOTSPEED) += tcp_lotspeed.o
-            tcp_lotspeed-y := lotspeed.o
-            EOF
-                        echo "✅ Created Makefile for Lotspeed"
-                        
-                        # 创建 Kconfig
-                        cat > net/ipv4/lotspeed/Kconfig << 'EOF'
-            # SPDX-License-Identifier: GPL-2.0-only
-            config TCP_CONG_LOTSPEED
-            	tristate "Lotspeed (Zeta-TCP) TCP congestion control"
-            	default m
-            	help
-            	  Lotspeed is a high-performance TCP congestion control algorithm
-            	  based on Zeta-TCP. It combines delay-based and loss-based approaches
-            	  for optimal throughput and low latency.
+# SPDX-License-Identifier: GPL-2.0
+obj-$(CONFIG_TCP_CONG_LOTSPEED) += tcp_lotspeed.o
+tcp_lotspeed-y := lotspeed.o
+EOF
+            echo "✅ Created Makefile for Lotspeed"
             
-            	  See https://github.com/uk0/lotspeed for more details.
-            
-            	  To compile this as a module, choose M here: the module
-            	  will be called tcp_lotspeed.
-            EOF
+            # 创建 Kconfig
+            cat > net/ipv4/lotspeed/Kconfig << 'EOF'
+# SPDX-License-Identifier: GPL-2.0-only
+config TCP_CONG_LOTSPEED
+	tristate "Lotspeed (Zeta-TCP) TCP congestion control"
+	default m
+	help
+	  Lotspeed is a high-performance TCP congestion control algorithm
+	  based on Zeta-TCP. It combines delay-based and loss-based approaches
+	  for optimal throughput and low latency.
+
+	  See https://github.com/uk0/lotspeed for more details.
+
+	  To compile this as a module, choose M here: the module
+	  will be called tcp_lotspeed.
+EOF
             echo "✅ Created Kconfig for Lotspeed"
             
             # 修改 net/ipv4/Makefile 添加 lotspeed 子目录
@@ -331,6 +331,8 @@ jobs:
               echo ""
               echo "Lotspeed patches in series:"
               grep "^lotspeed/" series | nl
+            else
+              echo "⚠️ No Lotspeed patches (source code integration used instead)"
             fi
           fi
           
@@ -426,22 +428,22 @@ jobs:
           
           echo "=== Configuring TCP Congestion Control ==="
           
-          # 如果 Lotspeed 已成功应用,启用相关配置
-          if [ "$LOTSPEED_OK" == "true" ]; then
+          # 如果 Lotspeed 源代码已集成,启用相关配置
+          if [ "$LOTSPEED_INTEGRATED" == "true" ]; then
             echo "Enabling Lotspeed congestion control..."
             
-            # 启用 Lotspeed 拥塞控制算法
-            scripts/config --enable CONFIG_TCP_CONG_LOTSPEED || \
+            # 启用高级拥塞控制选项
+            scripts/config --enable CONFIG_TCP_CONG_ADVANCED
+            
+            # 启用 Lotspeed 拥塞控制算法(作为模块或内建)
             scripts/config --module CONFIG_TCP_CONG_LOTSPEED || \
-            echo "⚠️ CONFIG_TCP_CONG_LOTSPEED not found, may be added by patch"
+            scripts/config --enable CONFIG_TCP_CONG_LOTSPEED || \
+            echo "⚠️ CONFIG_TCP_CONG_LOTSPEED config failed, will check after olddefconfig"
             
             # 设置 Lotspeed 为默认拥塞控制算法
             scripts/config --set-str CONFIG_DEFAULT_TCP_CONG "lotspeed"
-            scripts/config --enable CONFIG_DEFAULT_LOTSPEED || echo "⚠️ CONFIG_DEFAULT_LOTSPEED not available"
-            scripts/config --disable CONFIG_DEFAULT_CUBIC
-            scripts/config --disable CONFIG_DEFAULT_BBR
             
-            echo "✅ Lotspeed configured as default congestion control"
+            echo "✅ Lotspeed configured"
           fi
           
           if [ "$XANMOD_OK" == "true" ]; then
@@ -496,25 +498,36 @@ jobs:
             grep "CONFIG_DEBUG_INFO_BTF" .config || true
           fi
           
-          if [ "$LOTSPEED_OK" == "true" ]; then
+          if [ "$LOTSPEED_INTEGRATED" == "true" ]; then
             echo ""
-            echo "Checking Lotspeed configuration:"
+            echo "Checking Lotspeed integration:"
+            
+            # 检查源文件是否存在
+            if [ -f "net/ipv4/lotspeed/lotspeed.c" ]; then
+              echo "✅ Lotspeed source file integrated: net/ipv4/lotspeed/lotspeed.c"
+            else
+              echo "❌ Lotspeed source file NOT found"
+            fi
+            
+            # 检查配置
+            echo ""
+            echo "Lotspeed configuration status:"
             if grep -q "CONFIG_TCP_CONG_LOTSPEED=y\|CONFIG_TCP_CONG_LOTSPEED=m" .config; then
               echo "✅ Lotspeed is enabled"
               grep "CONFIG_TCP_CONG_LOTSPEED" .config | grep -v "^#"
             else
-              echo "⚠️ Lotspeed not found in .config"
-              grep "CONFIG_TCP_CONG_LOTSPEED" .config || echo "  (no CONFIG_TCP_CONG_LOTSPEED entry)"
+              echo "⚠️ Lotspeed not found in .config (checking all occurrences):"
+              grep "CONFIG_TCP_CONG_LOTSPEED" .config || echo "  (no CONFIG_TCP_CONG_LOTSPEED entry at all)"
             fi
             
             echo ""
             echo "Default congestion control:"
             if grep -q 'CONFIG_DEFAULT_TCP_CONG="lotspeed"' .config; then
               echo "✅ Lotspeed is set as default"
-              grep "CONFIG_DEFAULT_TCP_CONG" .config | grep -v "^#"
-            else
+            elif grep -q "CONFIG_DEFAULT_TCP_CONG" .config; then
               echo "Current default:"
               grep "CONFIG_DEFAULT_TCP_CONG" .config | grep -v "^#"
+              echo "⚠️ Note: Lotspeed may not be available as default option if build fails"
             fi
           fi
           
