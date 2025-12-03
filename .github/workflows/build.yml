@@ -128,32 +128,10 @@ jobs:
           fi
           
           echo ""
-          
-          # Lotspeed (Zeta-TCP) 补丁
-          echo "Downloading Lotspeed (Zeta-TCP) congestion control patches..."
-          if git clone --depth=1 -b zeta-tcp https://github.com/uk0/lotspeed.git lotspeed-patches 2>&1; then
-            if [ -d "lotspeed-patches" ]; then
-              echo "✅ Lotspeed patches downloaded successfully"
-              echo "LOTSPEED_OK=true" >> $GITHUB_ENV
-              
-              # 列出可用的补丁文件
-              echo "Available Lotspeed patches:"
-              find lotspeed-patches -name "*.patch" -o -name "*.diff" | head -20
-            else
-              echo "⚠️ Lotspeed repository downloaded but directory structure unexpected"
-              echo "LOTSPEED_OK=false" >> $GITHUB_ENV
-            fi
-          else
-            echo "❌ Failed to download Lotspeed patches repository"
-            echo "LOTSPEED_OK=false" >> $GITHUB_ENV
-          fi
-          
-          echo ""
           echo "=== Patch download summary ==="
           echo "Debian: $DEBIAN_OK"
           echo "Xanmod: $XANMOD_OK"
           echo "Bore: $BORE_OK"
-          echo "Lotspeed: $LOTSPEED_OK"
 
       - name: Organize Patches
         run: |
@@ -205,69 +183,7 @@ jobs:
           fi
           
           echo ""
-          echo "=== Step 4: Integrate Lotspeed (Zeta-TCP) source code ==="
-          if [ "$LOTSPEED_OK" == "true" ]; then
-            echo "Lotspeed is a kernel module, integrating source into kernel tree..."
-            
-            # 创建目标目录
-            mkdir -p net/ipv4/lotspeed
-            
-            # 复制主要源文件
-            if [ -f "../lotspeed-patches/lotspeed.c" ]; then
-              cp ../lotspeed-patches/lotspeed.c net/ipv4/lotspeed/
-              echo "✅ Copied lotspeed.c"
-            fi
-            
-            # 创建 Makefile
-            cat > net/ipv4/lotspeed/Makefile << 'EOF'
-# SPDX-License-Identifier: GPL-2.0
-obj-$(CONFIG_TCP_CONG_LOTSPEED) += tcp_lotspeed.o
-tcp_lotspeed-y := lotspeed.o
-EOF
-            echo "✅ Created Makefile for Lotspeed"
-            
-            # 创建 Kconfig
-            cat > net/ipv4/lotspeed/Kconfig << 'EOF'
-# SPDX-License-Identifier: GPL-2.0-only
-config TCP_CONG_LOTSPEED
-	tristate "Lotspeed (Zeta-TCP) TCP congestion control"
-	default m
-	help
-	  Lotspeed is a high-performance TCP congestion control algorithm
-	  based on Zeta-TCP. It combines delay-based and loss-based approaches
-	  for optimal throughput and low latency.
-
-	  See https://github.com/uk0/lotspeed for more details.
-
-	  To compile this as a module, choose M here: the module
-	  will be called tcp_lotspeed.
-EOF
-            echo "✅ Created Kconfig for Lotspeed"
-            
-            # 修改 net/ipv4/Makefile 添加 lotspeed 子目录
-            if ! grep -q "obj-y += lotspeed/" net/ipv4/Makefile; then
-              echo "obj-y += lotspeed/" >> net/ipv4/Makefile
-              echo "✅ Added Lotspeed to net/ipv4/Makefile"
-            fi
-            
-            # 修改 net/ipv4/Kconfig 添加 lotspeed 配置
-            if ! grep -q "source \"net/ipv4/lotspeed/Kconfig\"" net/ipv4/Kconfig; then
-              # 在 TCP congestion control 部分后添加
-              sed -i '/menu "TCP: advanced congestion control"/a source "net/ipv4/lotspeed/Kconfig"' net/ipv4/Kconfig || \
-              sed -i '/config TCP_CONG_ADVANCED/a source "net/ipv4/lotspeed/Kconfig"' net/ipv4/Kconfig || \
-              echo 'source "net/ipv4/lotspeed/Kconfig"' >> net/ipv4/Kconfig
-              echo "✅ Added Lotspeed to net/ipv4/Kconfig"
-            fi
-            
-            echo "✅ Lotspeed source code integrated into kernel tree"
-            echo "LOTSPEED_INTEGRATED=true" >> $GITHUB_ENV
-          else
-            echo "⚠️ Lotspeed source not available, skipping"
-            echo "LOTSPEED_INTEGRATED=false" >> $GITHUB_ENV
-          fi
-          
-          echo ""
-          echo "=== Step 5: Copy custom patches ==="
+          echo "=== Step 4: Copy custom patches ==="
           CUSTOM_SOURCE="../kernel_patches/${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}"
           
           echo "Looking for custom patches in: $CUSTOM_SOURCE"
@@ -290,7 +206,7 @@ EOF
           fi
           
           echo ""
-          echo "=== Step 6: Build series file ==="
+          echo "=== Step 5: Build series file ==="
           cd patches
           
           if [ "$DEBIAN_OK" != "true" ]; then
@@ -318,24 +234,6 @@ EOF
             fi
           fi
           
-          if [ -d "./lotspeed" ]; then
-            LOTSPEED_PATCH_COUNT=$(find ./lotspeed -type f \( -name "*.patch" -o -name "*.diff" \) | wc -l)
-            
-            if [ $LOTSPEED_PATCH_COUNT -gt 0 ]; then
-              echo "" >> series
-              echo "# Lotspeed (Zeta-TCP) Congestion Control Patches ($LOTSPEED_PATCH_COUNT patches)" >> series
-              find ./lotspeed -type f \( -name "*.patch" -o -name "*.diff" \) -printf "lotspeed/%P\n" | sort >> series
-              
-              echo "✅ Added $LOTSPEED_PATCH_COUNT Lotspeed patches to series"
-              
-              echo ""
-              echo "Lotspeed patches in series:"
-              grep "^lotspeed/" series | nl
-            else
-              echo "⚠️ No Lotspeed patches (source code integration used instead)"
-            fi
-          fi
-          
           if [ -d "./custom" ]; then
             CUSTOM_PATCH_COUNT=$(find ./custom -type f -name "*.patch" | wc -l)
             
@@ -359,16 +257,14 @@ EOF
           
           echo ""
           echo "=== Statistics ==="
-          TOTAL_PATCHES=$(grep -c "\.patch$\|\.diff$" series || echo 0)
+          TOTAL_PATCHES=$(grep -c "\.patch$" series || echo 0)
           XANMOD_IN_SERIES=$(grep -c "^xanmod-net/" series || echo 0)
           BORE_IN_SERIES=$(grep -c "^cpu-scheduler/" series || echo 0)
-          LOTSPEED_IN_SERIES=$(grep -c "^lotspeed/" series || echo 0)
           CUSTOM_IN_SERIES=$(grep -c "^custom/" series || echo 0)
           
           echo "Total patches in series: $TOTAL_PATCHES"
           echo "  - Xanmod: $XANMOD_IN_SERIES"
           echo "  - Bore: $BORE_IN_SERIES"
-          echo "  - Lotspeed: $LOTSPEED_IN_SERIES"
           echo "  - Custom: $CUSTOM_IN_SERIES"
           echo "=================="
 
@@ -387,23 +283,10 @@ EOF
           echo ""
           echo "=== Patch Summary ==="
           
-          TOTAL_EXPECTED=$(grep -c "\.patch$\|\.diff$" patches/series || echo 0)
+          TOTAL_EXPECTED=$(grep -c "\.patch$" patches/series || echo 0)
           TOTAL_APPLIED=$(quilt applied 2>/dev/null | wc -l || echo 0)
           
           echo "Total: $TOTAL_APPLIED / $TOTAL_EXPECTED applied"
-          
-          LOTSPEED_EXPECTED=$(grep -c "^lotspeed/" patches/series || echo 0)
-          
-          if [ $LOTSPEED_EXPECTED -gt 0 ]; then
-            LOTSPEED_APPLIED=$(quilt applied 2>/dev/null | grep -c "^lotspeed/" || echo 0)
-            
-            echo "Lotspeed patches: $LOTSPEED_APPLIED / $LOTSPEED_EXPECTED"
-            
-            if [ $LOTSPEED_APPLIED -gt 0 ]; then
-              echo "✅ Lotspeed patches applied:"
-              quilt applied | grep "^lotspeed/"
-            fi
-          fi
           
           CUSTOM_EXPECTED=$(grep -c "^custom/" patches/series || echo 0)
           
@@ -428,44 +311,21 @@ EOF
           
           echo "=== Configuring TCP Congestion Control ==="
           
-          # 如果 Lotspeed 源代码已集成,启用相关配置
-          if [ "$LOTSPEED_INTEGRATED" == "true" ]; then
-            echo "Enabling Lotspeed congestion control..."
-            
-            # 启用高级拥塞控制选项
-            scripts/config --enable CONFIG_TCP_CONG_ADVANCED
-            
-            # 启用 Lotspeed 拥塞控制算法(作为模块或内建)
-            scripts/config --module CONFIG_TCP_CONG_LOTSPEED || \
-            scripts/config --enable CONFIG_TCP_CONG_LOTSPEED || \
-            echo "⚠️ CONFIG_TCP_CONG_LOTSPEED config failed, will check after olddefconfig"
-            
-            # 设置 Lotspeed 为默认拥塞控制算法
-            scripts/config --set-str CONFIG_DEFAULT_TCP_CONG "lotspeed"
-            
-            echo "✅ Lotspeed configured"
-          fi
-          
           if [ "$XANMOD_OK" == "true" ]; then
-            echo "Configuring Xanmod BBR variants..."
-            
-            # 启用 BBR (CONFIG_TCP_CONG_BBR) 作为内建或模块
+            # 启用 BBR (CONFIG_TCP_CONG_BBR) 作为内建
             scripts/config --enable CONFIG_TCP_CONG_BBR
             
-            # 其他 BBR 变体作为内建或模块
+            # 其他 BBR 变体作为内建
             scripts/config --enable CONFIG_TCP_CONG_BBR1 || echo "⚠️ BBR1 not available"
             scripts/config --enable CONFIG_TCP_CONG_BBRPLUS || echo "⚠️ BBRPlus not available"
             scripts/config --enable CONFIG_TCP_CONG_BRUTAL || echo "⚠️ Brutal not available"
             
-            # 如果没有启用 Lotspeed,则设置 BBR 为默认
-            if [ "$LOTSPEED_OK" != "true" ]; then
-              scripts/config --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
-              scripts/config --enable CONFIG_DEFAULT_BBR
-              scripts/config --disable CONFIG_DEFAULT_CUBIC
-              echo "✅ Configured BBR as default congestion control"
-            else
-              echo "✅ BBR variants enabled but Lotspeed will be used as default"
-            fi
+            # 设置 Xanmod bbr 为默认算法
+            scripts/config --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
+            scripts/config --enable CONFIG_DEFAULT_BBR
+            scripts/config --disable CONFIG_DEFAULT_CUBIC
+            
+            echo "✅ Configured BBR as default congestion control"
           else
             echo "⚠️ Xanmod patches not available, skipping BBR configuration"
           fi
@@ -498,39 +358,6 @@ EOF
             grep "CONFIG_DEBUG_INFO_BTF" .config || true
           fi
           
-          if [ "$LOTSPEED_INTEGRATED" == "true" ]; then
-            echo ""
-            echo "Checking Lotspeed integration:"
-            
-            # 检查源文件是否存在
-            if [ -f "net/ipv4/lotspeed/lotspeed.c" ]; then
-              echo "✅ Lotspeed source file integrated: net/ipv4/lotspeed/lotspeed.c"
-            else
-              echo "❌ Lotspeed source file NOT found"
-            fi
-            
-            # 检查配置
-            echo ""
-            echo "Lotspeed configuration status:"
-            if grep -q "CONFIG_TCP_CONG_LOTSPEED=y\|CONFIG_TCP_CONG_LOTSPEED=m" .config; then
-              echo "✅ Lotspeed is enabled"
-              grep "CONFIG_TCP_CONG_LOTSPEED" .config | grep -v "^#"
-            else
-              echo "⚠️ Lotspeed not found in .config (checking all occurrences):"
-              grep "CONFIG_TCP_CONG_LOTSPEED" .config || echo "  (no CONFIG_TCP_CONG_LOTSPEED entry at all)"
-            fi
-            
-            echo ""
-            echo "Default congestion control:"
-            if grep -q 'CONFIG_DEFAULT_TCP_CONG="lotspeed"' .config; then
-              echo "✅ Lotspeed is set as default"
-            elif grep -q "CONFIG_DEFAULT_TCP_CONG" .config; then
-              echo "Current default:"
-              grep "CONFIG_DEFAULT_TCP_CONG" .config | grep -v "^#"
-              echo "⚠️ Note: Lotspeed may not be available as default option if build fails"
-            fi
-          fi
-          
           if [ "$XANMOD_OK" == "true" ]; then
             echo ""
             echo "Checking BBR variants configuration:"
@@ -552,10 +379,6 @@ EOF
           fi
           
           echo ""
-          echo "All available TCP congestion control algorithms:"
-          grep "CONFIG_TCP_CONG_" .config | grep -v "^#" | grep "=" || echo "None found"
-          
-          echo ""
           echo "================================================"
 
       - name: Build Kernel Debian Packages
@@ -570,7 +393,7 @@ EOF
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-x86_64-lotspeed
+          name: kernel-x86_64
           path: |
             *.deb
             *.changes
