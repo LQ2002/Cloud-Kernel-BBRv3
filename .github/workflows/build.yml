@@ -1,4 +1,4 @@
-name: Build Debian Kernel (x86_64)
+name: Build Debian Kernel (x86_64) with Lotspeed
 
 on:
   repository_dispatch:
@@ -128,10 +128,32 @@ jobs:
           fi
           
           echo ""
+          
+          # Lotspeed (Zeta-TCP) 补丁
+          echo "Downloading Lotspeed (Zeta-TCP) congestion control patches..."
+          if git clone --depth=1 -b zeta-tcp https://github.com/uk0/lotspeed.git lotspeed-patches 2>&1; then
+            if [ -d "lotspeed-patches" ]; then
+              echo "✅ Lotspeed patches downloaded successfully"
+              echo "LOTSPEED_OK=true" >> $GITHUB_ENV
+              
+              # 列出可用的补丁文件
+              echo "Available Lotspeed patches:"
+              find lotspeed-patches -name "*.patch" -o -name "*.diff" | head -20
+            else
+              echo "⚠️ Lotspeed repository downloaded but directory structure unexpected"
+              echo "LOTSPEED_OK=false" >> $GITHUB_ENV
+            fi
+          else
+            echo "❌ Failed to download Lotspeed patches repository"
+            echo "LOTSPEED_OK=false" >> $GITHUB_ENV
+          fi
+          
+          echo ""
           echo "=== Patch download summary ==="
           echo "Debian: $DEBIAN_OK"
           echo "Xanmod: $XANMOD_OK"
           echo "Bore: $BORE_OK"
+          echo "Lotspeed: $LOTSPEED_OK"
 
       - name: Organize Patches
         run: |
@@ -183,7 +205,35 @@ jobs:
           fi
           
           echo ""
-          echo "=== Step 4: Copy custom patches ==="
+          echo "=== Step 4: Copy Lotspeed (Zeta-TCP) patches ==="
+          if [ "$LOTSPEED_OK" == "true" ]; then
+            mkdir -p patches/lotspeed
+            
+            # 查找并复制所有 .patch 和 .diff 文件
+            if find ../lotspeed-patches -type f \( -name "*.patch" -o -name "*.diff" \) -exec cp {} patches/lotspeed/ \; 2>/dev/null; then
+              LOTSPEED_COUNT=$(find patches/lotspeed -type f \( -name "*.patch" -o -name "*.diff" \) | wc -l)
+              
+              if [ $LOTSPEED_COUNT -gt 0 ]; then
+                echo "✅ Copied $LOTSPEED_COUNT Lotspeed patches"
+                echo "Lotspeed patches:"
+                find patches/lotspeed -type f \( -name "*.patch" -o -name "*.diff" \) | while read f; do
+                  echo "  - $(basename $f)"
+                done
+              else
+                echo "⚠️ No Lotspeed patch files found"
+                # 如果没有现成的补丁文件,查看是否有源代码需要手动集成
+                echo "Checking for Lotspeed source files..."
+                ls -la ../lotspeed-patches/ || true
+              fi
+            else
+              echo "⚠️ Failed to copy Lotspeed patches"
+            fi
+          else
+            echo "⚠️ Lotspeed patches not available, skipping"
+          fi
+          
+          echo ""
+          echo "=== Step 5: Copy custom patches ==="
           CUSTOM_SOURCE="../kernel_patches/${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}"
           
           echo "Looking for custom patches in: $CUSTOM_SOURCE"
@@ -206,7 +256,7 @@ jobs:
           fi
           
           echo ""
-          echo "=== Step 5: Build series file ==="
+          echo "=== Step 6: Build series file ==="
           cd patches
           
           if [ "$DEBIAN_OK" != "true" ]; then
@@ -234,6 +284,22 @@ jobs:
             fi
           fi
           
+          if [ -d "./lotspeed" ]; then
+            LOTSPEED_PATCH_COUNT=$(find ./lotspeed -type f \( -name "*.patch" -o -name "*.diff" \) | wc -l)
+            
+            if [ $LOTSPEED_PATCH_COUNT -gt 0 ]; then
+              echo "" >> series
+              echo "# Lotspeed (Zeta-TCP) Congestion Control Patches ($LOTSPEED_PATCH_COUNT patches)" >> series
+              find ./lotspeed -type f \( -name "*.patch" -o -name "*.diff" \) -printf "lotspeed/%P\n" | sort >> series
+              
+              echo "✅ Added $LOTSPEED_PATCH_COUNT Lotspeed patches to series"
+              
+              echo ""
+              echo "Lotspeed patches in series:"
+              grep "^lotspeed/" series | nl
+            fi
+          fi
+          
           if [ -d "./custom" ]; then
             CUSTOM_PATCH_COUNT=$(find ./custom -type f -name "*.patch" | wc -l)
             
@@ -257,14 +323,16 @@ jobs:
           
           echo ""
           echo "=== Statistics ==="
-          TOTAL_PATCHES=$(grep -c "\.patch$" series || echo 0)
+          TOTAL_PATCHES=$(grep -c "\.patch$\|\.diff$" series || echo 0)
           XANMOD_IN_SERIES=$(grep -c "^xanmod-net/" series || echo 0)
           BORE_IN_SERIES=$(grep -c "^cpu-scheduler/" series || echo 0)
+          LOTSPEED_IN_SERIES=$(grep -c "^lotspeed/" series || echo 0)
           CUSTOM_IN_SERIES=$(grep -c "^custom/" series || echo 0)
           
           echo "Total patches in series: $TOTAL_PATCHES"
           echo "  - Xanmod: $XANMOD_IN_SERIES"
           echo "  - Bore: $BORE_IN_SERIES"
+          echo "  - Lotspeed: $LOTSPEED_IN_SERIES"
           echo "  - Custom: $CUSTOM_IN_SERIES"
           echo "=================="
 
@@ -283,10 +351,23 @@ jobs:
           echo ""
           echo "=== Patch Summary ==="
           
-          TOTAL_EXPECTED=$(grep -c "\.patch$" patches/series || echo 0)
+          TOTAL_EXPECTED=$(grep -c "\.patch$\|\.diff$" patches/series || echo 0)
           TOTAL_APPLIED=$(quilt applied 2>/dev/null | wc -l || echo 0)
           
           echo "Total: $TOTAL_APPLIED / $TOTAL_EXPECTED applied"
+          
+          LOTSPEED_EXPECTED=$(grep -c "^lotspeed/" patches/series || echo 0)
+          
+          if [ $LOTSPEED_EXPECTED -gt 0 ]; then
+            LOTSPEED_APPLIED=$(quilt applied 2>/dev/null | grep -c "^lotspeed/" || echo 0)
+            
+            echo "Lotspeed patches: $LOTSPEED_APPLIED / $LOTSPEED_EXPECTED"
+            
+            if [ $LOTSPEED_APPLIED -gt 0 ]; then
+              echo "✅ Lotspeed patches applied:"
+              quilt applied | grep "^lotspeed/"
+            fi
+          fi
           
           CUSTOM_EXPECTED=$(grep -c "^custom/" patches/series || echo 0)
           
@@ -311,21 +392,44 @@ jobs:
           
           echo "=== Configuring TCP Congestion Control ==="
           
+          # 如果 Lotspeed 已成功应用,启用相关配置
+          if [ "$LOTSPEED_OK" == "true" ]; then
+            echo "Enabling Lotspeed congestion control..."
+            
+            # 启用 Lotspeed 拥塞控制算法
+            scripts/config --enable CONFIG_TCP_CONG_LOTSPEED || \
+            scripts/config --module CONFIG_TCP_CONG_LOTSPEED || \
+            echo "⚠️ CONFIG_TCP_CONG_LOTSPEED not found, may be added by patch"
+            
+            # 设置 Lotspeed 为默认拥塞控制算法
+            scripts/config --set-str CONFIG_DEFAULT_TCP_CONG "lotspeed"
+            scripts/config --enable CONFIG_DEFAULT_LOTSPEED || echo "⚠️ CONFIG_DEFAULT_LOTSPEED not available"
+            scripts/config --disable CONFIG_DEFAULT_CUBIC
+            scripts/config --disable CONFIG_DEFAULT_BBR
+            
+            echo "✅ Lotspeed configured as default congestion control"
+          fi
+          
           if [ "$XANMOD_OK" == "true" ]; then
-            # 启用 BBR (CONFIG_TCP_CONG_BBR) 作为内建
+            echo "Configuring Xanmod BBR variants..."
+            
+            # 启用 BBR (CONFIG_TCP_CONG_BBR) 作为内建或模块
             scripts/config --enable CONFIG_TCP_CONG_BBR
             
-            # 其他 BBR 变体作为内建
+            # 其他 BBR 变体作为内建或模块
             scripts/config --enable CONFIG_TCP_CONG_BBR1 || echo "⚠️ BBR1 not available"
             scripts/config --enable CONFIG_TCP_CONG_BBRPLUS || echo "⚠️ BBRPlus not available"
             scripts/config --enable CONFIG_TCP_CONG_BRUTAL || echo "⚠️ Brutal not available"
             
-            # 设置 Xanmod bbr 为默认算法
-            scripts/config --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
-            scripts/config --enable CONFIG_DEFAULT_BBR
-            scripts/config --disable CONFIG_DEFAULT_CUBIC
-            
-            echo "✅ Configured BBR as default congestion control"
+            # 如果没有启用 Lotspeed,则设置 BBR 为默认
+            if [ "$LOTSPEED_OK" != "true" ]; then
+              scripts/config --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
+              scripts/config --enable CONFIG_DEFAULT_BBR
+              scripts/config --disable CONFIG_DEFAULT_CUBIC
+              echo "✅ Configured BBR as default congestion control"
+            else
+              echo "✅ BBR variants enabled but Lotspeed will be used as default"
+            fi
           else
             echo "⚠️ Xanmod patches not available, skipping BBR configuration"
           fi
@@ -358,6 +462,28 @@ jobs:
             grep "CONFIG_DEBUG_INFO_BTF" .config || true
           fi
           
+          if [ "$LOTSPEED_OK" == "true" ]; then
+            echo ""
+            echo "Checking Lotspeed configuration:"
+            if grep -q "CONFIG_TCP_CONG_LOTSPEED=y\|CONFIG_TCP_CONG_LOTSPEED=m" .config; then
+              echo "✅ Lotspeed is enabled"
+              grep "CONFIG_TCP_CONG_LOTSPEED" .config | grep -v "^#"
+            else
+              echo "⚠️ Lotspeed not found in .config"
+              grep "CONFIG_TCP_CONG_LOTSPEED" .config || echo "  (no CONFIG_TCP_CONG_LOTSPEED entry)"
+            fi
+            
+            echo ""
+            echo "Default congestion control:"
+            if grep -q 'CONFIG_DEFAULT_TCP_CONG="lotspeed"' .config; then
+              echo "✅ Lotspeed is set as default"
+              grep "CONFIG_DEFAULT_TCP_CONG" .config | grep -v "^#"
+            else
+              echo "Current default:"
+              grep "CONFIG_DEFAULT_TCP_CONG" .config | grep -v "^#"
+            fi
+          fi
+          
           if [ "$XANMOD_OK" == "true" ]; then
             echo ""
             echo "Checking BBR variants configuration:"
@@ -379,6 +505,10 @@ jobs:
           fi
           
           echo ""
+          echo "All available TCP congestion control algorithms:"
+          grep "CONFIG_TCP_CONG_" .config | grep -v "^#" | grep "=" || echo "None found"
+          
+          echo ""
           echo "================================================"
 
       - name: Build Kernel Debian Packages
@@ -393,7 +523,7 @@ jobs:
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-x86_64
+          name: kernel-x86_64-lotspeed
           path: |
             *.deb
             *.changes
