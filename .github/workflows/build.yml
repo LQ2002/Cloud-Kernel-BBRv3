@@ -205,31 +205,65 @@ jobs:
           fi
           
           echo ""
-          echo "=== Step 4: Copy Lotspeed (Zeta-TCP) patches ==="
+          echo "=== Step 4: Integrate Lotspeed (Zeta-TCP) source code ==="
           if [ "$LOTSPEED_OK" == "true" ]; then
-            mkdir -p patches/lotspeed
+            echo "Lotspeed is a kernel module, integrating source into kernel tree..."
             
-            # 查找并复制所有 .patch 和 .diff 文件
-            if find ../lotspeed-patches -type f \( -name "*.patch" -o -name "*.diff" \) -exec cp {} patches/lotspeed/ \; 2>/dev/null; then
-              LOTSPEED_COUNT=$(find patches/lotspeed -type f \( -name "*.patch" -o -name "*.diff" \) | wc -l)
-              
-              if [ $LOTSPEED_COUNT -gt 0 ]; then
-                echo "✅ Copied $LOTSPEED_COUNT Lotspeed patches"
-                echo "Lotspeed patches:"
-                find patches/lotspeed -type f \( -name "*.patch" -o -name "*.diff" \) | while read f; do
-                  echo "  - $(basename $f)"
-                done
-              else
-                echo "⚠️ No Lotspeed patch files found"
-                # 如果没有现成的补丁文件,查看是否有源代码需要手动集成
-                echo "Checking for Lotspeed source files..."
-                ls -la ../lotspeed-patches/ || true
-              fi
-            else
-              echo "⚠️ Failed to copy Lotspeed patches"
+            # 创建目标目录
+            mkdir -p net/ipv4/lotspeed
+            
+            # 复制主要源文件
+            if [ -f "../lotspeed-patches/lotspeed.c" ]; then
+              cp ../lotspeed-patches/lotspeed.c net/ipv4/lotspeed/
+              echo "✅ Copied lotspeed.c"
             fi
+            
+            # 创建 Makefile
+            cat > net/ipv4/lotspeed/Makefile << 'EOF'
+# SPDX-License-Identifier: GPL-2.0
+obj-$(CONFIG_TCP_CONG_LOTSPEED) += tcp_lotspeed.o
+tcp_lotspeed-y := lotspeed.o
+EOF
+            echo "✅ Created Makefile for Lotspeed"
+            
+            # 创建 Kconfig
+            cat > net/ipv4/lotspeed/Kconfig << 'EOF'
+# SPDX-License-Identifier: GPL-2.0-only
+config TCP_CONG_LOTSPEED
+	tristate "Lotspeed (Zeta-TCP) TCP congestion control"
+	default m
+	help
+	  Lotspeed is a high-performance TCP congestion control algorithm
+	  based on Zeta-TCP. It combines delay-based and loss-based approaches
+	  for optimal throughput and low latency.
+
+	  See https://github.com/uk0/lotspeed for more details.
+
+	  To compile this as a module, choose M here: the module
+	  will be called tcp_lotspeed.
+EOF
+            echo "✅ Created Kconfig for Lotspeed"
+            
+            # 修改 net/ipv4/Makefile 添加 lotspeed 子目录
+            if ! grep -q "obj-y += lotspeed/" net/ipv4/Makefile; then
+              echo "obj-y += lotspeed/" >> net/ipv4/Makefile
+              echo "✅ Added Lotspeed to net/ipv4/Makefile"
+            fi
+            
+            # 修改 net/ipv4/Kconfig 添加 lotspeed 配置
+            if ! grep -q "source \"net/ipv4/lotspeed/Kconfig\"" net/ipv4/Kconfig; then
+              # 在 TCP congestion control 部分后添加
+              sed -i '/menu "TCP: advanced congestion control"/a source "net/ipv4/lotspeed/Kconfig"' net/ipv4/Kconfig || \
+              sed -i '/config TCP_CONG_ADVANCED/a source "net/ipv4/lotspeed/Kconfig"' net/ipv4/Kconfig || \
+              echo 'source "net/ipv4/lotspeed/Kconfig"' >> net/ipv4/Kconfig
+              echo "✅ Added Lotspeed to net/ipv4/Kconfig"
+            fi
+            
+            echo "✅ Lotspeed source code integrated into kernel tree"
+            echo "LOTSPEED_INTEGRATED=true" >> $GITHUB_ENV
           else
-            echo "⚠️ Lotspeed patches not available, skipping"
+            echo "⚠️ Lotspeed source not available, skipping"
+            echo "LOTSPEED_INTEGRATED=false" >> $GITHUB_ENV
           fi
           
           echo ""
