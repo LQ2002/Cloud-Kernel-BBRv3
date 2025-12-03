@@ -316,26 +316,27 @@ jobs:
           # 1. 复制源码到 net/ipv4/tcp_lotspeed.c
           cp ../lotspeed-src/lotspeed.c net/ipv4/tcp_lotspeed.c
           
-          # 2. 修改 net/ipv4/Makefile，添加编译目标
-          # 这告诉内核：如果 CONFIG_TCP_CONG_LOTSPEED 被选中，就编译 tcp_lotspeed.o
+          # 2. 修改 net/ipv4/Makefile
           echo "obj-\$(CONFIG_TCP_CONG_LOTSPEED) += tcp_lotspeed.o" >> net/ipv4/Makefile
           
-          # 3. 修改 net/ipv4/Kconfig，在 TCP_CONG_CUBIC 后插入 lotspeed 配置项
-          # 这样 make menuconfig 时就能看到它
+          # 3. 修改 net/ipv4/Kconfig
+          # 创建配置块文件
           cat <<EOF > lotspeed_kconfig_entry
-
+      
           config TCP_CONG_LOTSPEED
               tristate "LotSpeed Zeta-TCP Congestion Control"
               default y
               depends on TCP_CONG_ADVANCED
               help
                 LotSpeed Zeta-TCP is a congestion control algorithm designed for 
-                high-latency and high-loss environments (Long Fat Networks).
-                It uses auto-scaling and hybrid delay/loss detection.
-
+                high-latency and high-loss environments.
+      
           EOF
           
-          sed -i '/config TCP_CONG_CUBIC/r lotspeed_kconfig_entry' net/ipv4/Kconfig
+          # --- 关键修改 ---
+          # 不要插在 CUBIC 后面，而是插在 "TCP: advanced congestion control" 菜单定义的下一行
+          # 这样不会破坏任何现有的 config 结构
+          sed -i '/menu "TCP: advanced congestion control"/r lotspeed_kconfig_entry' net/ipv4/Kconfig
           
           echo "✅ LotSpeed integrated into net/ipv4/ source tree"
 
