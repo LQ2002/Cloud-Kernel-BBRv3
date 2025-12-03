@@ -1,4 +1,4 @@
-name: Build Debian Kernel (x86_64) with Lotspeed
+name: name: Build Debian Kernel (x86_64)
 
 on:
   repository_dispatch:
