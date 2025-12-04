@@ -171,16 +171,16 @@ jobs:
             # 在文件末尾添加配置
             cat >> net/ipv4/Kconfig <<'EOF'
 
-config TCP_CONG_LOTSPEED
-	tristate "LotSpeed Zeta-TCP Congestion Control"
-	default y
-	help
-	  LotSpeed Zeta-TCP is a congestion control algorithm designed for
-	  high-latency and high-loss environments. It provides better performance
-	  in challenging network conditions.
-
-	  If unsure, say Y.
-EOF
+            config TCP_CONG_LOTSPEED
+            	tristate "LotSpeed Zeta-TCP Congestion Control"
+            	default y
+            	help
+            	  LotSpeed Zeta-TCP is a congestion control algorithm designed for
+            	  high-latency and high-loss environments. It provides better performance
+            	  in challenging network conditions.
+            
+            	  If unsure, say Y.
+            EOF
             echo "✅ Updated net/ipv4/Kconfig"
           fi
           
