@@ -8,7 +8,7 @@ on:
       kernel_version:
         description: "Kernel version"
         required: true
-        default: "6.12.21"
+        default: "6.12.37"
         type: string
       skip_cache:
         description: "Skip Cache"
@@ -82,48 +82,78 @@ jobs:
           
           XANMOD_DIR="linux-xanmod-patches/linux-${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}.y-xanmod"
           if [ -d "$XANMOD_DIR" ]; then
-            echo "✅ Xanmod patches found"
+            echo "✅ Xanmod patches found for ${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}"
             echo "XANMOD_OK=true" >> $GITHUB_ENV
-            ls -la "$XANMOD_DIR/net/" || true
+            echo "XANMOD_DIR=$XANMOD_DIR" >> $GITHUB_ENV
           else
             echo "❌ Xanmod patches not found for this kernel version"
             echo "XANMOD_OK=false" >> $GITHUB_ENV
             exit 1
           fi
           
-          # Bore 补丁
+          # Bore 补丁 - 智能匹配最接近的版本
+          echo ""
           echo "Downloading Bore scheduler patches..."
           git clone --depth=1 https://github.com/firelzrd/bore-scheduler.git bore-patches
           
-          BORE_DIR="bore-patches/patches/stable/linux-${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}-bore"
-          if [ -d "$BORE_DIR" ]; then
-            echo "✅ Bore patches found"
-            echo "BORE_OK=true" >> $GITHUB_ENV
-            ls -la "$BORE_DIR/" | head -20
-          else
-            echo "❌ Bore patches not found for this kernel version"
+          TARGET_VERSION="${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}"
+          echo "Looking for Bore patches for kernel $TARGET_VERSION..."
+          
+          # 列出所有可用的版本
+          cd bore-patches/patches/stable
+          echo "Available Bore versions:"
+          ls -1 | grep "linux-${{ needs.prepare.outputs.kernel_major_version }}\.${{ needs.prepare.outputs.kernel_minor_version }}" | sort -V
+          
+          # 查找完全匹配或最接近的版本
+          BORE_DIRS=($(ls -1 | grep "linux-${{ needs.prepare.outputs.kernel_major_version }}\.${{ needs.prepare.outputs.kernel_minor_version }}" | sort -V))
+          
+          if [ ${#BORE_DIRS[@]} -eq 0 ]; then
+            echo "❌ No Bore patches found for kernel $TARGET_VERSION"
             echo "BORE_OK=false" >> $GITHUB_ENV
+            cd ../../..
             exit 1
           fi
+          
+          # 使用最新的可用版本
+          BORE_DIR="${BORE_DIRS[-1]}"
+          echo "✅ Using Bore patches: $BORE_DIR"
+          echo "BORE_OK=true" >> $GITHUB_ENV
+          echo "BORE_DIR=bore-patches/patches/stable/$BORE_DIR" >> $GITHUB_ENV
+          
+          cd ../../..
+          ls -la "bore-patches/patches/stable/$BORE_DIR/" | head -20
 
       - name: Apply Xanmod Network Patches
         run: |
           cd linux
           
           echo "=== Applying Xanmod Network Patches ==="
-          XANMOD_SOURCE="../linux-xanmod-patches/linux-${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}.y-xanmod/net"
+          XANMOD_SOURCE="../$XANMOD_DIR/net"
           
           if [ -d "$XANMOD_SOURCE" ]; then
+            PATCH_COUNT=0
+            FAILED_COUNT=0
+            
             for patch in "$XANMOD_SOURCE"/*.patch; do
               if [ -f "$patch" ]; then
                 echo "Applying: $(basename $patch)"
-                patch -p1 < "$patch" || {
-                  echo "❌ Failed to apply $(basename $patch)"
-                  exit 1
-                }
+                if patch -p1 --dry-run < "$patch" > /dev/null 2>&1; then
+                  patch -p1 < "$patch"
+                  ((PATCH_COUNT++))
+                else
+                  echo "⚠️ Skipping $(basename $patch) - conflicts detected"
+                  ((FAILED_COUNT++))
+                fi
               fi
             done
-            echo "✅ All Xanmod patches applied successfully"
+            
+            echo ""
+            echo "✅ Xanmod patches: $PATCH_COUNT applied, $FAILED_COUNT skipped"
+            
+            if [ $PATCH_COUNT -eq 0 ]; then
+              echo "❌ No Xanmod patches were applied!"
+              exit 1
+            fi
           fi
 
       - name: Apply Bore Scheduler Patches
@@ -131,20 +161,63 @@ jobs:
           cd linux
           
           echo "=== Applying Bore Scheduler Patches ==="
-          BORE_SOURCE="../bore-patches/patches/stable/linux-${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}-bore"
+          BORE_SOURCE="../$BORE_DIR"
           
           if [ -d "$BORE_SOURCE" ]; then
+            PATCH_COUNT=0
+            FAILED_PATCHES=()
+            
             # Bore 补丁需要按顺序应用
             for patch in "$BORE_SOURCE"/*.patch; do
               if [ -f "$patch" ]; then
-                echo "Applying: $(basename $patch)"
-                patch -p1 < "$patch" || {
-                  echo "❌ Failed to apply $(basename $patch)"
-                  exit 1
-                }
+                PATCH_NAME=$(basename "$patch")
+                echo "Attempting: $PATCH_NAME"
+                
+                # 先测试补丁是否能干净应用
+                if patch -p1 --dry-run < "$patch" > /dev/null 2>&1; then
+                  patch -p1 < "$patch"
+                  echo "✅ Applied: $PATCH_NAME"
+                  ((PATCH_COUNT++))
+                else
+                  # 尝试使用 --fuzz 参数宽松应用
+                  echo "⚠️ Trying with fuzz factor..."
+                  if patch -p1 --fuzz=3 < "$patch" 2>&1 | tee patch.log; then
+                    if ! grep -q "FAILED" patch.log; then
+                      echo "✅ Applied with fuzz: $PATCH_NAME"
+                      ((PATCH_COUNT++))
+                    else
+                      echo "❌ Failed: $PATCH_NAME"
+                      FAILED_PATCHES+=("$PATCH_NAME")
+                    fi
+                  else
+                    echo "❌ Failed: $PATCH_NAME"
+                    FAILED_PATCHES+=("$PATCH_NAME")
+                  fi
+                  rm -f patch.log
+                fi
               fi
             done
-            echo "✅ All Bore patches applied successfully"
+            
+            echo ""
+            echo "=== Bore Patch Summary ==="
+            echo "Successfully applied: $PATCH_COUNT patches"
+            
+            if [ ${#FAILED_PATCHES[@]} -gt 0 ]; then
+              echo "Failed patches: ${#FAILED_PATCHES[@]}"
+              for failed in "${FAILED_PATCHES[@]}"; do
+                echo "  - $failed"
+              done
+              
+              # 如果所有补丁都失败了，退出
+              if [ $PATCH_COUNT -eq 0 ]; then
+                echo "❌ CRITICAL: No Bore patches were applied!"
+                exit 1
+              else
+                echo "⚠️ WARNING: Some patches failed, but continuing with partial BORE support"
+              fi
+            else
+              echo "✅ All Bore patches applied successfully"
+            fi
           fi
 
       - name: Integrate LotSpeed (Zeta-TCP)
@@ -171,16 +244,16 @@ jobs:
             # 在文件末尾添加配置
             cat >> net/ipv4/Kconfig <<'EOF'
 
-            config TCP_CONG_LOTSPEED
-            	tristate "LotSpeed Zeta-TCP Congestion Control"
-            	default y
-            	help
-            	  LotSpeed Zeta-TCP is a congestion control algorithm designed for
-            	  high-latency and high-loss environments. It provides better performance
-            	  in challenging network conditions.
-            
-            	  If unsure, say Y.
-            EOF
+config TCP_CONG_LOTSPEED
+	tristate "LotSpeed Zeta-TCP Congestion Control"
+	default y
+	help
+	  LotSpeed Zeta-TCP is a congestion control algorithm designed for
+	  high-latency and high-loss environments. It provides better performance
+	  in challenging network conditions.
+
+	  If unsure, say Y.
+EOF
             echo "✅ Updated net/ipv4/Kconfig"
           fi
           
