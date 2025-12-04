@@ -179,6 +179,47 @@ jobs:
             echo "Warning: No Bore patches applied"
           fi
 
+            # ---------------------------------------------------
+            # ---------------------------------------------------
+      # Apply BBR1 / BBRPlus / Brutal patches (from local repo)
+      # ---------------------------------------------------
+      - name: Apply BBR1 / BBRPlus / Brutal patches
+        run: |
+          cd linux
+
+          PATCH_DIR="../kernel_patches/6.12/net"
+
+          echo "=== Using local BBR patches from: $PATCH_DIR ==="
+          ls -1 "$PATCH_DIR"
+
+          APPLIED=0
+          FAILED=0
+
+          for p in "$PATCH_DIR"/*.patch; do
+            echo "Trying patch: $(basename "$p")"
+
+            # Clean apply?
+            if patch -p1 --dry-run < "$p" >/dev/null 2>&1; then
+              patch -p1 < "$p"
+              echo "Applied clean: $(basename "$p")"
+              APPLIED=$((APPLIED+1))
+            else
+              echo "Trying fuzzy apply: $(basename "$p")"
+              if patch -p1 --fuzz=3 < "$p" >/dev/null 2>&1; then
+                echo "Applied with fuzz: $(basename "$p")"
+                APPLIED=$((APPLIED+1))
+              else
+                echo "Failed: $(basename "$p")"
+                FAILED=$((FAILED+1))
+              fi
+            fi
+          done
+
+          echo "BBR patches applied: $APPLIED, failed: $FAILED"
+          if [ $APPLIED -eq 0 ]; then
+            echo "Warning: None of the BBR patches applied"
+          fi
+
       # ---------------------------------------------------
       # Integrate LotSpeed (Zeta-TCP)
       # ---------------------------------------------------
