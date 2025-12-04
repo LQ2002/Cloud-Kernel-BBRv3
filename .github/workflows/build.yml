@@ -194,12 +194,12 @@ jobs:
 
           cat >> net/ipv4/Kconfig <<'EOF'
 
-config TCP_CONG_LOTSPEED
-    tristate "LotSpeed Zeta-TCP congestion control"
-    default y
-    help
-      Experimental congestion control algorithm for high-latency networks.
-EOF
+          config TCP_CONG_LOTSPEED
+              tristate "LotSpeed Zeta-TCP congestion control"
+              default y
+              help
+                Experimental congestion control algorithm for high-latency networks.
+          EOF
 
       # ---------------------------------------------------
       # Configure Kernel
