@@ -1,8 +1,6 @@
-name: Build Debian Kernel (x86_64) - Fixed
+name: Build Debian Kernel (x86_64) - Stable
 
 on:
-  repository_dispatch:
-    types: [trigger-x86_64-build]
   workflow_dispatch:
     inputs:
       kernel_version:
@@ -11,7 +9,7 @@ on:
         default: "6.12.37"
         type: string
       skip_cache:
-        description: "Skip Cache"
+        description: "Skip cache"
         required: false
         default: false
         type: boolean
@@ -21,399 +19,251 @@ jobs:
     name: Prepare Build Parameters
     runs-on: ubuntu-24.04
     outputs:
-      kernel_version: ${{ steps.prepare_build_parameters.outputs.KERNEL_VERSION }}
-      kernel_minor_version: ${{ steps.prepare_build_parameters.outputs.KERNEL_MINOR_VERSION }}
-      kernel_major_version: ${{ steps.prepare_build_parameters.outputs.KERNEL_MAJOR_VERSION }}
-      skip_cache: ${{ steps.prepare_build_parameters.outputs.SKIP_CACHE }}
+      KERNEL_VERSION: ${{ steps.get_params.outputs.KERNEL_VERSION }}
+      KERNEL_MAJOR: ${{ steps.get_params.outputs.KERNEL_MAJOR }}
+      KERNEL_MINOR: ${{ steps.get_params.outputs.KERNEL_MINOR }}
     steps:
-      - name: Prepare Build Parameters
-        id: prepare_build_parameters
+      - name: Get Parameters
+        id: get_params
         run: |
-          if [ "${{ github.event_name }}" == "repository_dispatch" ]; then
-            KERNEL_VERSION="${{ github.event.client_payload.kernel_version }}"
-          else
-            KERNEL_VERSION="${{ inputs.kernel_version }}"
-          fi
-          KERNEL_MINOR_VERSION=$(echo "$KERNEL_VERSION" | cut -d '.' -f 2)
-          KERNEL_MAJOR_VERSION=$(echo "$KERNEL_VERSION" | cut -d '.' -f 1)
-          SKIP_CACHE="${{ inputs.skip_cache }}" || SKIP_CACHE=false
+          KV="${{ inputs.kernel_version }}"
+          KM=$(echo "$KV" | cut -d'.' -f1)
+          KMI=$(echo "$KV" | cut -d'.' -f2)
 
-          echo "KERNEL_VERSION=$KERNEL_VERSION" >> $GITHUB_OUTPUT
-          echo "KERNEL_MINOR_VERSION=$KERNEL_MINOR_VERSION" >> $GITHUB_OUTPUT
-          echo "KERNEL_MAJOR_VERSION=$KERNEL_MAJOR_VERSION" >> $GITHUB_OUTPUT
-          echo "SKIP_CACHE=$SKIP_CACHE" >> $GITHUB_OUTPUT
+          echo "KERNEL_VERSION=$KV" >> $GITHUB_OUTPUT
+          echo "KERNEL_MAJOR=$KM" >> $GITHUB_OUTPUT
+          echo "KERNEL_MINOR=$KMI" >> $GITHUB_OUTPUT
 
   build:
-    name: Build Debian Kernel Package for x86_64
+    name: Build Kernel
     runs-on: ubuntu-24.04
     needs: prepare
-    outputs:
-      kernel_version: ${{ needs.prepare.outputs.kernel_version }}
-      build_time: ${{ steps.get_build_time.outputs.BUILD_TIMESTAMP }}
+
     steps:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential curl git patch jq openssl quilt \
-            libncurses-dev libssl-dev libelf-dev libudev-dev libpci-dev libcap-dev libpcre2-dev libcurl4-openssl-dev \
-            bison bc flex rsync debhelper lz4 pahole zstd dpkg-dev fakeroot kmod cpio xz-utils ccache \
-            libdw-dev binutils-dev libunwind-dev libslang2-dev python3-dev python3-setuptools \
-            liblzma-dev libzstd-dev libbabeltrace-dev libbfd-dev libiberty-dev libnuma-dev perl
+          sudo apt-get install -y \
+            build-essential git curl patch jq bc bison flex rsync \
+            libssl-dev libelf-dev libudev-dev libpci-dev libcap-dev \
+            libncurses-dev kmod cpio xz-utils lz4 zstd pahole \
+            libpcre2-dev libdw-dev libunwind-dev liblzma-dev \
+            libzstd-dev libbabeltrace-dev libnuma-dev fakeroot \
+            debhelper dpkg-dev quilt openssl
 
-      - name: Checkout Kernel Sources
+      - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-tags: true
 
-      - name: Download Linux Kernel Source
+      - name: Download Kernel Source
         run: |
-          wget https://cdn.kernel.org/pub/linux/kernel/v${{ needs.prepare.outputs.kernel_major_version }}.x/linux-${{ needs.prepare.outputs.kernel_version }}.tar.xz
-          tar -xf linux-${{ needs.prepare.outputs.kernel_version }}.tar.xz
-          rm linux-${{ needs.prepare.outputs.kernel_version }}.tar.xz
-          mv linux-${{ needs.prepare.outputs.kernel_version }} linux
+          KV="${{ needs.prepare.outputs.KERNEL_VERSION }}"
+          KM="${{ needs.prepare.outputs.KERNEL_MAJOR }}"
 
-      - name: Download and Verify Patches
+          wget https://cdn.kernel.org/pub/linux/kernel/v${KM}.x/linux-${KV}.tar.xz
+          tar -xf linux-${KV}.tar.xz
+          mv linux-${KV} linux
+          rm linux-${KV}.tar.xz
+
+      # -------------------------------
+      # Download Xanmod + Bore patches
+      # -------------------------------
+
+      - name: Download Xanmod patches
         run: |
-          echo "=== Downloading patches for kernel ${{ needs.prepare.outputs.kernel_version }} ==="
-          
-          # Xanmod 补丁
-          echo "Downloading Xanmod network patches..."
-          git clone --depth=1 https://gitlab.com/xanmod/linux-patches.git linux-xanmod-patches
-          
-          XANMOD_DIR="linux-xanmod-patches/linux-${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}.y-xanmod"
-          if [ -d "$XANMOD_DIR" ]; then
-            echo "✅ Xanmod patches found for ${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}"
-            echo "XANMOD_OK=true" >> $GITHUB_ENV
-            echo "XANMOD_DIR=$XANMOD_DIR" >> $GITHUB_ENV
+          KM="${{ needs.prepare.outputs.KERNEL_MAJOR }}"
+          KMI="${{ needs.prepare.outputs.KERNEL_MINOR }}"
+
+          echo "=== Xanmod: downloading patches ==="
+          git clone --depth=1 https://gitlab.com/xanmod/linux-patches.git xanmod
+
+          TARGET="linux-${KM}.${KMI}.y-xanmod"
+          if [ ! -d "xanmod/${TARGET}" ]; then
+            echo "Xanmod patches for ${KM}.${KMI} missing"
+            echo "Trying fallback: highest version in repo"
+            TARGET=$(ls xanmod | grep 'linux-' | sort -V | tail -1)
+          fi
+
+          echo "Using Xanmod patch dir: $TARGET"
+          echo "XANMOD_DIR=xanmod/${TARGET}" >> $GITHUB_ENV
+
+      - name: Download Bore patches
+        run: |
+          KM="${{ needs.prepare.outputs.KERNEL_MAJOR }}"
+          KMI="${{ needs.prepare.outputs.KERNEL_MINOR }}"
+
+          echo "=== Bore: downloading patches ==="
+          git clone --depth=1 https://github.com/firelzrd/bore-scheduler.git bore
+
+          cd bore/patches/stable
+
+          # Find dirs matching major.minor
+          MATCHES=($(ls -1d linux-${KM}.${KMI}* 2>/dev/null))
+
+          if [ ${#MATCHES[@]} -eq 0 ]; then
+            echo "No exact Bore match, using closest version"
+            MATCH=$(ls -1d linux-* | sort -V | tail -1)
           else
-            echo "❌ Xanmod patches not found for this kernel version"
-            echo "XANMOD_OK=false" >> $GITHUB_ENV
-            exit 1
+            MATCH=$(printf "%s\n" "${MATCHES[@]}" | sort -V | tail -1)
           fi
-          
-          # Bore 补丁 - 智能匹配最接近的版本
-          echo ""
-          echo "Downloading Bore scheduler patches..."
-          git clone --depth=1 https://github.com/firelzrd/bore-scheduler.git bore-patches
-          
-          TARGET_VERSION="${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}"
-          echo "Looking for Bore patches for kernel $TARGET_VERSION..."
-          
-          # 列出所有可用的版本
-          cd bore-patches/patches/stable
-          echo "Available Bore versions:"
-          ls -1 | grep "linux-${{ needs.prepare.outputs.kernel_major_version }}\.${{ needs.prepare.outputs.kernel_minor_version }}" | sort -V
-          
-          # 查找完全匹配或最接近的版本
-          BORE_DIRS=($(ls -1 | grep "linux-${{ needs.prepare.outputs.kernel_major_version }}\.${{ needs.prepare.outputs.kernel_minor_version }}" | sort -V))
-          
-          if [ ${#BORE_DIRS[@]} -eq 0 ]; then
-            echo "❌ No Bore patches found for kernel $TARGET_VERSION"
-            echo "BORE_OK=false" >> $GITHUB_ENV
-            cd ../../..
-            exit 1
-          fi
-          
-          # 使用最新的可用版本
-          BORE_DIR="${BORE_DIRS[-1]}"
-          echo "✅ Using Bore patches: $BORE_DIR"
-          echo "BORE_OK=true" >> $GITHUB_ENV
-          echo "BORE_DIR=bore-patches/patches/stable/$BORE_DIR" >> $GITHUB_ENV
-          
-          cd ../../..
-          ls -la "bore-patches/patches/stable/$BORE_DIR/" | head -20
 
+          echo "Using Bore patch dir: $MATCH"
+          echo "BORE_DIR=bore/patches/stable/${MATCH}" >> $GITHUB_ENV
+          cd ../../..
+            # ---------------------------------------------------
+      # Apply Xanmod Patches
+      # ---------------------------------------------------
       - name: Apply Xanmod Network Patches
         run: |
           cd linux
-          
-          echo "=== Applying Xanmod Network Patches ==="
-          XANMOD_SOURCE="../$XANMOD_DIR/net"
-          
-          if [ -d "$XANMOD_SOURCE" ]; then
-            PATCH_COUNT=0
-            FAILED_COUNT=0
-            
-            for patch in "$XANMOD_SOURCE"/*.patch; do
-              if [ -f "$patch" ]; then
-                echo "Applying: $(basename $patch)"
-                if patch -p1 --dry-run < "$patch" > /dev/null 2>&1; then
-                  patch -p1 < "$patch"
-                  ((PATCH_COUNT++))
-                else
-                  echo "⚠️ Skipping $(basename $patch) - conflicts detected"
-                  ((FAILED_COUNT++))
-                fi
-              fi
-            done
-            
-            echo ""
-            echo "✅ Xanmod patches: $PATCH_COUNT applied, $FAILED_COUNT skipped"
-            
-            if [ $PATCH_COUNT -eq 0 ]; then
-              echo "❌ No Xanmod patches were applied!"
-              exit 1
+          XDIR="../${XANMOD_DIR}"
+
+          echo "=== Applying Xanmod patches ==="
+          ls -l "$XDIR"
+
+          APPLIED=0
+          SKIPPED=0
+
+          for p in "$XDIR"/*.patch; do
+            [ -f "$p" ] || continue
+            echo "Testing $p"
+
+            if patch -p1 --dry-run < "$p" >/dev/null 2>&1; then
+              patch -p1 < "$p"
+              APPLIED=$((APPLIED+1))
+            else
+              echo "Skipped due to conflicts: $(basename $p)"
+              SKIPPED=$((SKIPPED+1))
             fi
+          done
+
+          echo "Xanmod applied: $APPLIED, skipped: $SKIPPED"
+          if [ $APPLIED -eq 0 ]; then
+            echo "Warning: No Xanmod patches applied"
           fi
 
+      # ---------------------------------------------------
+      # Apply Bore Patches
+      # ---------------------------------------------------
       - name: Apply Bore Scheduler Patches
         run: |
           cd linux
-          
-          echo "=== Applying Bore Scheduler Patches ==="
-          BORE_SOURCE="../$BORE_DIR"
-          
-          if [ -d "$BORE_SOURCE" ]; then
-            PATCH_COUNT=0
-            FAILED_PATCHES=()
-            
-            # Bore 补丁需要按顺序应用
-            for patch in "$BORE_SOURCE"/*.patch; do
-              if [ -f "$patch" ]; then
-                PATCH_NAME=$(basename "$patch")
-                echo "Attempting: $PATCH_NAME"
-                
-                # 先测试补丁是否能干净应用
-                if patch -p1 --dry-run < "$patch" > /dev/null 2>&1; then
-                  patch -p1 < "$patch"
-                  echo "✅ Applied: $PATCH_NAME"
-                  ((PATCH_COUNT++))
-                else
-                  # 尝试使用 --fuzz 参数宽松应用
-                  echo "⚠️ Trying with fuzz factor..."
-                  if patch -p1 --fuzz=3 < "$patch" 2>&1 | tee patch.log; then
-                    if ! grep -q "FAILED" patch.log; then
-                      echo "✅ Applied with fuzz: $PATCH_NAME"
-                      ((PATCH_COUNT++))
-                    else
-                      echo "❌ Failed: $PATCH_NAME"
-                      FAILED_PATCHES+=("$PATCH_NAME")
-                    fi
-                  else
-                    echo "❌ Failed: $PATCH_NAME"
-                    FAILED_PATCHES+=("$PATCH_NAME")
-                  fi
-                  rm -f patch.log
-                fi
-              fi
-            done
-            
-            echo ""
-            echo "=== Bore Patch Summary ==="
-            echo "Successfully applied: $PATCH_COUNT patches"
-            
-            if [ ${#FAILED_PATCHES[@]} -gt 0 ]; then
-              echo "Failed patches: ${#FAILED_PATCHES[@]}"
-              for failed in "${FAILED_PATCHES[@]}"; do
-                echo "  - $failed"
-              done
-              
-              # 如果所有补丁都失败了，退出
-              if [ $PATCH_COUNT -eq 0 ]; then
-                echo "❌ CRITICAL: No Bore patches were applied!"
-                exit 1
-              else
-                echo "⚠️ WARNING: Some patches failed, but continuing with partial BORE support"
-              fi
+          BDIR="../${BORE_DIR}"
+
+          echo "=== Applying Bore patches ==="
+          ls -l "$BDIR"
+
+          APPLIED=0
+          FAILED=0
+
+          for p in "$BDIR"/*.patch; do
+            echo "Trying patch $(basename $p)"
+
+            if patch -p1 --dry-run < "$p" >/dev/null 2>&1; then
+              echo "Clean apply"
+              patch -p1 < "$p"
+              APPLIED=$((APPLIED+1))
             else
-              echo "✅ All Bore patches applied successfully"
+              echo "Try fuzzy apply"
+              if patch -p1 --fuzz=3 < "$p" >/dev/null 2>&1; then
+                echo "Applied with fuzz"
+                APPLIED=$((APPLIED+1))
+              else
+                echo "Failed: $(basename $p)"
+                FAILED=$((FAILED+1))
+              fi
             fi
+          done
+
+          echo "BORE applied=$APPLIED failed=$FAILED"
+          if [ $APPLIED -eq 0 ]; then
+            echo "Warning: No Bore patches applied"
           fi
 
+      # ---------------------------------------------------
+      # Integrate LotSpeed (Zeta-TCP)
+      # ---------------------------------------------------
       - name: Integrate LotSpeed (Zeta-TCP)
         run: |
           cd linux
-          
-          echo "=== Downloading LotSpeed Source ==="
-          git clone -b zeta-tcp --depth=1 https://github.com/uk0/lotspeed.git ../lotspeed-src
-          
-          echo "=== Integrating LotSpeed into Kernel ==="
-          
-          # 1. 复制源码
-          cp ../lotspeed-src/lotspeed.c net/ipv4/tcp_lotspeed.c
-          echo "✅ Copied tcp_lotspeed.c"
-          
-          # 2. 修改 Makefile
-          if ! grep -q "tcp_lotspeed" net/ipv4/Makefile; then
-            echo "obj-\$(CONFIG_TCP_CONG_LOTSPEED) += tcp_lotspeed.o" >> net/ipv4/Makefile
-            echo "✅ Updated net/ipv4/Makefile"
-          fi
-          
-          # 3. 修改 Kconfig - 使用更稳妥的方法
-          if ! grep -q "CONFIG_TCP_CONG_LOTSPEED" net/ipv4/Kconfig; then
-            # 在文件末尾添加配置
-            cat >> net/ipv4/Kconfig <<'EOF'
 
-            config TCP_CONG_LOTSPEED
-            	tristate "LotSpeed Zeta-TCP Congestion Control"
-            	default y
-            	help
-            	  LotSpeed Zeta-TCP is a congestion control algorithm designed for
-            	  high-latency and high-loss environments. It provides better performance
-            	  in challenging network conditions.
-            
-            	  If unsure, say Y.
-            EOF
-            echo "✅ Updated net/ipv4/Kconfig"
-          fi
-          
-          # 验证文件存在
-          ls -lh net/ipv4/tcp_lotspeed.c
-          grep -A5 "CONFIG_TCP_CONG_LOTSPEED" net/ipv4/Kconfig
+          echo "=== Integrating LotSpeed ==="
+          git clone -b zeta-tcp --depth=1 https://github.com/uk0/lotspeed.git ../lotspeed
 
+          cp ../lotspeed/lotspeed.c net/ipv4/tcp_lotspeed.c
+          echo "obj-\$(CONFIG_TCP_CONG_LOTSPEED) += tcp_lotspeed.o" >> net/ipv4/Makefile
+
+          cat >> net/ipv4/Kconfig <<'EOF'
+
+config TCP_CONG_LOTSPEED
+    tristate "LotSpeed Zeta-TCP congestion control"
+    default y
+    help
+      Experimental congestion control algorithm for high-latency networks.
+EOF
+
+      # ---------------------------------------------------
+      # Configure Kernel
+      # ---------------------------------------------------
       - name: Configure Kernel
         run: |
           cd linux
-          
-          # 如果有自定义配置,先复制
+
           if [ -f "../configs/x86_64.config" ]; then
             cp ../configs/x86_64.config .config
-            echo "✅ Using custom config"
           else
-            # 否则使用默认配置
             make defconfig
-            echo "⚠️ Using default config"
           fi
-          
-          echo "=== Configuring Key Features ==="
-          
-          # 启用 BORE 调度器
-          scripts/config --enable CONFIG_SCHED_BORE
+
+          echo "=== Enabling BORE Scheduler ==="
           scripts/config --enable CONFIG_SCHED_CLASS_EXT
-          
-          # 启用所有 TCP 拥塞控制算法为内建(y),不是模块(m)
+          scripts/config --enable CONFIG_SCHED_BORE
+
+          echo "=== Enable Congestion Control ==="
           scripts/config --set-val CONFIG_TCP_CONG_ADVANCED y
-          
-          # 启用 BBR 和变体
           scripts/config --set-val CONFIG_TCP_CONG_BBR y
           scripts/config --set-val CONFIG_TCP_CONG_BBR1 y 2>/dev/null || true
           scripts/config --set-val CONFIG_TCP_CONG_BBRPLUS y 2>/dev/null || true
           scripts/config --set-val CONFIG_TCP_CONG_BRUTAL y 2>/dev/null || true
-          
-          # 启用 LotSpeed
           scripts/config --set-val CONFIG_TCP_CONG_LOTSPEED y
-          
-          # 启用其他常用算法为内建
+
           scripts/config --set-val CONFIG_TCP_CONG_CUBIC y
           scripts/config --set-val CONFIG_TCP_CONG_RENO y
-          scripts/config --set-val CONFIG_TCP_CONG_WESTWOOD y
           scripts/config --set-val CONFIG_TCP_CONG_HTCP y
+          scripts/config --set-val CONFIG_TCP_CONG_WESTWOOD y
           scripts/config --set-val CONFIG_TCP_CONG_VEGAS y
-          
-          # 设置默认拥塞控制算法为 BBR
+
           scripts/config --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
           scripts/config --enable CONFIG_DEFAULT_BBR
           scripts/config --disable CONFIG_DEFAULT_CUBIC
-          
-          # 禁用 BTF 避免编译问题
+
+          echo "=== Disable BTF ==="
           scripts/config --disable CONFIG_DEBUG_INFO_BTF
           scripts/config --disable CONFIG_DEBUG_INFO_BTF_MODULES
           scripts/config --disable CONFIG_DEBUG_INFO
-          scripts/config --disable CONFIG_DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT
-          
-          # 应用配置
+
           make olddefconfig
-          
-          echo "✅ Configuration complete"
 
-      - name: Verify Configuration
-        run: |
-          cd linux
-          
-          echo "================================================"
-          echo "Configuration Verification"
-          echo "================================================"
-          
-          echo ""
-          echo "=== BORE Scheduler ==="
-          grep "CONFIG_SCHED_BORE" .config || echo "❌ BORE not found"
-          
-          echo ""
-          echo "=== TCP Congestion Control Algorithms ==="
-          echo "LotSpeed:"
-          grep "CONFIG_TCP_CONG_LOTSPEED" .config || echo "❌ LotSpeed not configured"
-          
-          echo ""
-          echo "BBR variants:"
-          grep "CONFIG_TCP_CONG_BBR" .config | grep -v "^#" || echo "❌ BBR not enabled"
-          
-          echo ""
-          echo "Other algorithms (should be =y, not =m):"
-          grep "CONFIG_TCP_CONG_" .config | grep "=y" | head -20
-          
-          echo ""
-          echo "Default congestion control:"
-          grep "CONFIG_DEFAULT_TCP_CONG" .config
-          
-          echo ""
-          echo "=== BTF Status ==="
-          grep "CONFIG_DEBUG_INFO_BTF" .config || echo "✅ BTF disabled"
-          
-          echo ""
-          echo "================================================"
-          
-          # 检查关键配置,如果缺失则失败
-          if ! grep -q "CONFIG_TCP_CONG_LOTSPEED=y" .config; then
-            echo "❌ CRITICAL: LotSpeed not enabled!"
-            exit 1
-          fi
-          
-          if ! grep -q "CONFIG_SCHED_BORE=y" .config; then
-            echo "⚠️ WARNING: BORE scheduler not enabled!"
-          fi
-
+      # ---------------------------------------------------
+      # Build Kernel
+      # ---------------------------------------------------
       - name: Build Kernel Debian Packages
         env:
-          KBUILD_BUILD_USER: "cloudpassenger"
-          KBUILD_BUILD_HOST: "github-actions"
+          KBUILD_BUILD_USER: "github"
+          KBUILD_BUILD_HOST: "actions"
           KDEB_COMPRESS: "xz"
         run: |
           cd linux
-          
-          echo "=== Starting Kernel Build ==="
-          echo "Kernel version: ${{ needs.prepare.outputs.kernel_version }}"
-          echo "CPU cores: $(nproc)"
-          echo ""
-          
-          # 使用所有 CPU 核心编译
-          make -j $(nproc) bindeb-pkg 2>&1 | tee build.log
-          
-          echo ""
-          echo "=== Build Complete ==="
-          ls -lh ../*.deb
+          make -j$(nproc) bindeb-pkg
 
-      - name: Verify Built Packages
-        run: |
-          echo "=== Debian Packages Built ==="
-          ls -lh *.deb
-          
-          echo ""
-          echo "=== Package Details ==="
-          for deb in *.deb; do
-            echo "---"
-            echo "Package: $deb"
-            dpkg -I "$deb" | grep "Package:\|Version:\|Architecture:"
-          done
-
-      - name: Upload Artifacts
+      # ---------------------------------------------------
+      # Upload Artifacts
+      # ---------------------------------------------------
+      - name: Upload Kernel .deb Files
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-x86_64-${{ needs.prepare.outputs.kernel_version }}
+          name: kernel-${{ needs.prepare.outputs.KERNEL_VERSION }}
           path: |
             *.deb
-            *.changes
             *.buildinfo
+            *.changes
             linux/.config
-          retention-days: 30
-
-      - name: Get build time
-        id: get_build_time
-        run: |
-          BUILD_TIMESTAMP=$(date -Is)
-          echo "BUILD_TIMESTAMP=$BUILD_TIMESTAMP" >> $GITHUB_OUTPUT
-          
-          echo ""
-          echo "=== Build Summary ==="
-          echo "Kernel Version: ${{ needs.prepare.outputs.kernel_version }}"
-          echo "Build Time: $BUILD_TIMESTAMP"
-          echo "Artifacts uploaded successfully"
