@@ -114,10 +114,11 @@ jobs:
           # copy Xanmod net patches if available
           if [ -n "${XANMOD_NET_DIR:-}" ] && [ -d "../${XANMOD_NET_DIR}" ]; then
             mkdir -p patches/net
-            find ../${XANMOD_NET_DIR} -maxdepth 1 -type f -name "*.patch" -exec cp {} patches/net/ \; 2>/dev/null || true
-            echo "⭕ Copied Xanmod net patches (non-recursive)"
+            find "../${XANMOD_NET_DIR}" -maxdepth 1 -type f -name "*.patch" \
+                -exec cp {} patches/net/ \;
+              echo "⭕ Copied Xanmod net/*.patch only (non-recursive)"
           else
-            echo "No Xanmod net patches to copy"
+              echo "⚠️ No Xanmod net patches found"
           fi
 
           # copy Bore patches (select closest / fallback)
