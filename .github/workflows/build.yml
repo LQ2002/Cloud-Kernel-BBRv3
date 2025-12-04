@@ -178,29 +178,6 @@ jobs:
           if [ $APPLIED -eq 0 ]; then
             echo "Warning: No Bore patches applied"
           fi
-
-      # ---------------------------------------------------
-      # Integrate LotSpeed (Zeta-TCP)
-      # ---------------------------------------------------
-      - name: Integrate LotSpeed (Zeta-TCP)
-        run: |
-          cd linux
-
-          echo "=== Integrating LotSpeed ==="
-          git clone -b zeta-tcp --depth=1 https://github.com/uk0/lotspeed.git ../lotspeed
-
-          cp ../lotspeed/lotspeed.c net/ipv4/tcp_lotspeed.c
-          echo "obj-\$(CONFIG_TCP_CONG_LOTSPEED) += tcp_lotspeed.o" >> net/ipv4/Makefile
-
-          cat >> net/ipv4/Kconfig <<'EOF'
-
-          config TCP_CONG_LOTSPEED
-              tristate "LotSpeed Zeta-TCP congestion control"
-              default y
-              help
-                Experimental congestion control algorithm for high-latency networks.
-          EOF
-
       # ---------------------------------------------------
       # Configure Kernel
       # ---------------------------------------------------
