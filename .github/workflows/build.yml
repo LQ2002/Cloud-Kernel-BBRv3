@@ -6,7 +6,7 @@ on:
       kernel_version:
         description: "Kernel version"
         required: true
-        default: "6.12.37"
+        default: "6.12.21"
         type: string
       skip_cache:
         description: "Skip cache"
@@ -63,121 +63,154 @@ jobs:
           tar -xf linux-${KV}.tar.xz
           mv linux-${KV} linux
           rm linux-${KV}.tar.xz
-
-      # -------------------------------
-      # Download Xanmod + Bore patches
-      # -------------------------------
-
-      - name: Download Xanmod patches
+      - name: Download Debian Kernel Additional Source
         run: |
-          KM="${{ needs.prepare.outputs.KERNEL_MAJOR }}"
-          KMI="${{ needs.prepare.outputs.KERNEL_MINOR }}"
+          echo "⌛ Downloading Debian Kernel Additional Source..."
+          git clone -b debian/${{ needs.prepare.outputs.KERNEL_VERSION }}-1 --depth=1 https://salsa.debian.org/kernel-team/linux.git linux-debian || echo "No matching debian branch, continuing"
+          echo "✅ Downloaded Debian Kernel Additional Source (if available)"
 
-          echo "=== Xanmod: downloading patches ==="
-          git clone --depth=1 https://gitlab.com/xanmod/linux-patches.git xanmod
-
-          TARGET="linux-${KM}.${KMI}.y-xanmod"
-          if [ ! -d "xanmod/${TARGET}" ]; then
-            echo "Xanmod patches for ${KM}.${KMI} missing"
-            echo "Trying fallback: highest version in repo"
-            TARGET=$(ls xanmod | grep 'linux-' | sort -V | tail -1)
-          fi
-
-          echo "Using Xanmod patch dir: $TARGET"
-          echo "XANMOD_DIR=xanmod/${TARGET}" >> $GITHUB_ENV
-
-      - name: Download Bore patches
+      - name: Download Xanmod Patches (with fallback)
         run: |
-          KM="${{ needs.prepare.outputs.KERNEL_MAJOR }}"
-          KMI="${{ needs.prepare.outputs.KERNEL_MINOR }}"
-
-          echo "=== Bore: downloading patches ==="
-          git clone --depth=1 https://github.com/firelzrd/bore-scheduler.git bore
-
-          cd bore/patches/stable
-
-          # Find dirs matching major.minor
-          MATCHES=($(ls -1d linux-${KM}.${KMI}* 2>/dev/null))
-
-          if [ ${#MATCHES[@]} -eq 0 ]; then
-            echo "No exact Bore match, using closest version"
-            MATCH=$(ls -1d linux-* | sort -V | tail -1)
+          echo "⌛ Downloading Xanmod Patches..."
+          git clone --depth=1 https://gitlab.com/xanmod/linux-patches.git linux-xanmod-patches
+          TARGET_DIR="linux-${{ needs.prepare.outputs.KERNEL_MAJOR }}.${{ needs.prepare.outputs.KERNEL_MINOR }}.y-xanmod"
+          if [ -d "linux-xanmod-patches/${TARGET_DIR}/net" ]; then
+            echo "Using Xanmod net patches: ${TARGET_DIR}"
+            echo "XANMOD_NET_DIR=linux-xanmod-patches/${TARGET_DIR}/net" >> $GITHUB_ENV
           else
-            MATCH=$(printf "%s\n" "${MATCHES[@]}" | sort -V | tail -1)
-          fi
-
-          echo "Using Bore patch dir: $MATCH"
-          echo "BORE_DIR=bore/patches/stable/${MATCH}" >> $GITHUB_ENV
-          cd ../../..
-            # ---------------------------------------------------
-      # Apply Xanmod Patches
-      # ---------------------------------------------------
-      - name: Apply Xanmod Network Patches
-        run: |
-          cd linux
-          XDIR="../${XANMOD_DIR}"
-
-          echo "=== Applying Xanmod patches ==="
-          ls -l "$XDIR"
-
-          APPLIED=0
-          SKIPPED=0
-
-          for p in "$XDIR"/*.patch; do
-            [ -f "$p" ] || continue
-            echo "Testing $p"
-
-            if patch -p1 --dry-run < "$p" >/dev/null 2>&1; then
-              patch -p1 < "$p"
-              APPLIED=$((APPLIED+1))
+            echo "Exact Xanmod net dir ${TARGET_DIR} not found, trying fallback to latest linux-*.y-xanmod"
+            FALLBACK=$(ls -1 linux-xanmod-patches | grep '^linux-' | grep 'y-xanmod' | sort -V | tail -1)
+            if [ -n "$FALLBACK" ] && [ -d "linux-xanmod-patches/${FALLBACK}/net" ]; then
+              echo "Using fallback Xanmod net dir: $FALLBACK"
+              echo "XANMOD_NET_DIR=linux-xanmod-patches/${FALLBACK}/net" >> $GITHUB_ENV
             else
-              echo "Skipped due to conflicts: $(basename $p)"
-              SKIPPED=$((SKIPPED+1))
+              echo "No Xanmod net patches found; XANMOD_NET_DIR unset"
             fi
-          done
+          fi
+          echo "✅ Xanmod clone done"
 
-          echo "Xanmod applied: $APPLIED, skipped: $SKIPPED"
-          if [ $APPLIED -eq 0 ]; then
-            echo "Warning: No Xanmod patches applied"
+      - name: Checkout Bore-Scheduler Patches
+        uses: actions/checkout@v4
+        with:
+          repository: firelzrd/bore-scheduler
+          path: bore-patches
+
+      - name: Organize Patches (quilt series)
+        run: |
+          set -e
+          echo "⌛ Organizing patches into linux/patches..."
+          cd linux
+          rm -rf patches
+          mkdir -p patches
+
+          # copy Debian patches if present
+          if [ -d "../linux-debian/debian/patches" ]; then
+            cp -R ../linux-debian/debian/patches/* patches/ || true
+            echo "⭕ Copied Debian patches"
+          else
+            echo "No debian/patches found"
           fi
 
-      # ---------------------------------------------------
-      # Apply Bore Patches
-      # ---------------------------------------------------
-      - name: Apply Bore Scheduler Patches
-        run: |
-          cd linux
-          BDIR="../${BORE_DIR}"
+          # copy Xanmod net patches if available
+          if [ -n "${XANMOD_NET_DIR:-}" ] && [ -d "../${XANMOD_NET_DIR}" ]; then
+            mkdir -p patches/net
+            cp -R ../${XANMOD_NET_DIR}/* patches/net/ || true
+            echo "⭕ Copied Xanmod net patches from ${XANMOD_NET_DIR}"
+          else
+            echo "No Xanmod net patches to copy"
+          fi
 
-          echo "=== Applying Bore patches ==="
-          ls -l "$BDIR"
-
-          APPLIED=0
-          FAILED=0
-
-          for p in "$BDIR"/*.patch; do
-            echo "Trying patch $(basename $p)"
-
-            if patch -p1 --dry-run < "$p" >/dev/null 2>&1; then
-              echo "Clean apply"
-              patch -p1 < "$p"
-              APPLIED=$((APPLIED+1))
+          # copy Bore patches (select closest / fallback)
+          BORE_SRC="../bore-patches/patches/stable"
+          if [ -d "$BORE_SRC" ]; then
+            # try exact major.minor-bore name, else choose latest linux-*bore
+            WANT="linux-${{ needs.prepare.outputs.KERNEL_MAJOR }}.${{ needs.prepare.outputs.KERNEL_MINOR }}-bore"
+            if [ -d "${BORE_SRC}/${WANT}" ]; then
+              mkdir -p patches/cpu-scheduler
+              cp -R ${BORE_SRC}/${WANT}/* patches/cpu-scheduler/ || true
+              echo "⭕ Copied Bore patches ${WANT}"
             else
-              echo "Try fuzzy apply"
-              if patch -p1 --fuzz=3 < "$p" >/dev/null 2>&1; then
-                echo "Applied with fuzz"
-                APPLIED=$((APPLIED+1))
+              FALLBACK=$(ls -1 ${BORE_SRC} | grep '^linux-' | grep '-bore' | sort -V | tail -1)
+              if [ -n "$FALLBACK" ]; then
+                mkdir -p patches/cpu-scheduler
+                cp -R ${BORE_SRC}/${FALLBACK}/* patches/cpu-scheduler/ || true
+                echo "⭕ Copied Bore fallback patches ${FALLBACK}"
               else
-                echo "Failed: $(basename $p)"
-                FAILED=$((FAILED+1))
+                echo "No Bore patches found"
               fi
             fi
-          done
-
-          echo "BORE applied=$APPLIED failed=$FAILED"
-          if [ $APPLIED -eq 0 ]; then
-            echo "Warning: No Bore patches applied"
           fi
+
+          # copy local custom kernel_patches if present (versioned by minor)
+          LOCAL_CUSTOM="../kernel_patches/${{ needs.prepare.outputs.KERNEL_MAJOR }}.${{ needs.prepare.outputs.KERNEL_MINOR }}"
+          if [ -d "$LOCAL_CUSTOM" ]; then
+            mkdir -p patches/custom
+            cp -R $LOCAL_CUSTOM/* patches/custom/ || true
+            echo "⭕ Copied local custom patches from $LOCAL_CUSTOM"
+          else
+            # also accept kernel_patches/<minor> without major prefix if you use that layout
+            LOCAL_CUSTOM2="../kernel_patches/${{ needs.prepare.outputs.KERNEL_MINOR }}"
+            if [ -d "$LOCAL_CUSTOM2" ]; then
+              mkdir -p patches/custom
+              cp -R $LOCAL_CUSTOM2/* patches/custom/ || true
+              echo "⭕ Copied local custom patches from $LOCAL_CUSTOM2"
+            else
+              echo "No local custom patches found"
+            fi
+          fi
+
+          # Build series file: net -> cpu-scheduler -> custom -> remaining
+          cd patches
+          rm -f series
+          echo "# Net Patches from Xanmod" >> series
+          if [ -d net ]; then find net -type f -name '*.patch' | sort | sed 's|^\./||' | sed 's|^|&|' -u | awk -F/ '{print $0}' | sed 's|^|net/|' | sed 's| / /|/|' | sed -n '1,100p' >> series; fi
+          echo "# CPU Scheduler Patches" >> series
+          if [ -d cpu-scheduler ]; then find cpu-scheduler -type f -name '*.patch' | sort >> series; fi
+          echo "# Custom Patches" >> series
+          if [ -d custom ]; then find custom -type f -name '*.patch' | sort >> series; fi
+          echo "# Other patches" >> series
+          find . -maxdepth 1 -type f -name '*.patch' | sort >> series || true
+
+          echo "===== series ====="
+          sed -n '1,200p' series || true
+          echo "✅ Patches organized"
+
+      - name: Apply Patches (quilt)
+        run: |
+          set -e
+          cd linux
+          export QUILT_PATCHES=patches
+          export QUILT_SERIES="patches/series"
+          # show quilt status & series for debug
+          echo "Quilt series:"
+          sed -n '1,200p' patches/series || true
+          quilt --quiltrc /dev/null series || true
+          quilt push -a || { echo "Quilt apply failed — show top of patch stack"; quilt top || true; quilt files || true; exit 1; }
+          echo "✅ All patches applied via quilt"
+
+
+      # ---------------------------------------------------
+      # Integrate LotSpeed (Zeta-TCP)
+      # ---------------------------------------------------
+      - name: Integrate LotSpeed (Zeta-TCP)
+        run: |
+          cd linux
+
+          echo "=== Integrating LotSpeed ==="
+          git clone -b zeta-tcp --depth=1 https://github.com/uk0/lotspeed.git ../lotspeed
+
+          cp ../lotspeed/lotspeed.c net/ipv4/tcp_lotspeed.c
+          echo "obj-\$(CONFIG_TCP_CONG_LOTSPEED) += tcp_lotspeed.o" >> net/ipv4/Makefile
+
+          cat >> net/ipv4/Kconfig <<'EOF'
+
+          config TCP_CONG_LOTSPEED
+              tristate "LotSpeed Zeta-TCP congestion control"
+              default y
+              help
+                Experimental congestion control algorithm for high-latency networks.
+          EOF
+
       # ---------------------------------------------------
       # Configure Kernel
       # ---------------------------------------------------
@@ -217,8 +250,10 @@ jobs:
           scripts/config --disable CONFIG_DEBUG_INFO_BTF
           scripts/config --disable CONFIG_DEBUG_INFO_BTF_MODULES
           scripts/config --disable CONFIG_DEBUG_INFO
+
           scripts/config --disable CONFIG_INFINIBAND
           scripts/config --disable CONFIG_RDMA
+
 
           make olddefconfig
 
