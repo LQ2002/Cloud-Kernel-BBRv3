@@ -63,10 +63,18 @@ jobs:
         make defconfig
         scripts/config --module CONFIG_TCP_CONG_ZETA
         scripts/config --disable CONFIG_DEBUG_INFO
+        scripts/config --disable CONFIG_DEBUG_INFO_BTF
+        scripts/config --disable CONFIG_DEBUG_INFO_DWARF4
+        scripts/config --disable CONFIG_DEBUG_INFO_DWARF5
+        scripts/config --disable CONFIG_WERROR
         make olddefconfig
         
-        # 编译模块
-        make -j$(nproc) modules_prepare
+        # 先编译 vmlinux 生成 Module.symvers (这一步很重要)
+        echo "生成符号表..."
+        make -j$(nproc) modules
+        
+        # 现在编译 zeta-tcp 模块
+        echo "编译 zeta-tcp 模块..."
         make -j$(nproc) M=net/ipv4/tcp_zeta modules
         
         # 检查结果
