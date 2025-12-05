@@ -1,4 +1,4 @@
-name: Build Kernel with LOTSPEED TCP as Default
+name: Build Kernel with ZETA-TCP
 
 on:
   push:
@@ -10,94 +10,59 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-    - name: Checkout
+    - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Install deps
+    - name: Install dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential flex bison libssl-dev \
           libncurses-dev dwarves bc git wget xz-utils
 
-    - name: Download kernel 6.12.21
+    - name: Download Linux kernel 6.12.21
       run: |
         wget https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.12.21.tar.xz
         tar -xf linux-6.12.21.tar.xz
         mv linux-6.12.21 linux
 
-    - name: Clone ZETA-TCP source
+    - name: Clone ZETA-TCP repo
       run: |
         git clone --branch zeta-tcp https://github.com/uk0/lotspeed.git lotspeed
 
-    - name: Integrate ZETA-TCP into kernel (built-in)
+    - name: Integrate ZETA-TCP as kernel module
       run: |
         mkdir -p linux/net/ipv4/zeta_tcp
         cp -r lotspeed/zeta_tcp/* linux/net/ipv4/zeta_tcp/
 
-        # Add built-in directory into core IPv4 build
-        echo "obj-y += zeta_tcp/" >> linux/net/ipv4/Makefile
+        # 将模块加入内核 build system
+        echo "obj-m += zeta_tcp.o" > linux/net/ipv4/zeta_tcp/Makefile
 
-        # Module list
-        cat > linux/net/ipv4/zeta_tcp/Makefile << 'EOF'
-        obj-y := zeta_main.o zeta_cong.o zeta_loss.o zeta_rtt.o
-        EOF
-        
-    - name: Patch kernel to register LOTSPEED and disable BBR
-      run: |
-        cd linux
+        # 如果需要合并多个源文件为单个模块：
+        # echo "zeta_tcp-objs := zeta_main.o zeta_cong.o zeta_loss.o zeta_rtt.o" >> linux/net/ipv4/zeta_tcp/Makefile
 
-        # Remove BBR from congestion list
-        sed -i 's/extern struct tcp_congestion_ops tcp_bbr_op;//g' net/ipv4/tcp_cong.c
-        sed -i 's/&tcp_bbr_op,//g' net/ipv4/tcp_cong.c
-
-        # Ensure ZETA ops is known
-        sed -i '/tcp_register_congestion_control/a extern struct tcp_congestion_ops zeta_tcp_cong;' net/ipv4/tcp_cong.c
-
-        # Register LOTSPEED at init
-        sed -i '/tcp_init_congestion_control()/a \ \ \ \ tcp_register_congestion_control(&zeta_tcp_cong);' net/ipv4/tcp_cong.c
-
-        # sysctl default → lotspeed
-        sed -i 's/"cubic"/"lotspeed"/g' net/ipv4/sysctl_net_ipv4.c
-        sed -i 's/"bbr"/"lotspeed"/g' net/ipv4/sysctl_net_ipv4.c
-        sed -i 's/"reno"/"lotspeed"/g' net/ipv4/sysctl_net_ipv4.c
-
-        # Kconfig entry
-        echo "config TCP_CONG_LOTSPEED
-        bool \"LOTSPEED TCP Congestion Control\"
-        default y" >> net/ipv4/Kconfig
-
-        mkdir -p net/ipv4/zeta_tcp
-        cat > net/ipv4/zeta_tcp/Kconfig << 'EOF'
-        config TCP_CONG_LOTSPEED
-                bool "LOTSPEED TCP Congestion Control"
-                default y
-        EOF
-
-        # Replace ops name inside zeta_main.c
-        sed -i 's/\.name *= *"[^"]*"/.name = "lotspeed"/' net/ipv4/zeta_tcp/zeta_main.c
-
-    - name: Configure kernel
+    - name: Prepare kernel config
       run: |
         cd linux
         make defconfig
+        # 若希望模块自动构建，可开启 module support 以及 EXPORT options
         scripts/config --file .config -e MODULES
-        scripts/config --file .config -e TCP_CONG_LOTSPEED
         make olddefconfig
 
-    - name: Build kernel
+    - name: Build kernel and modules
       run: |
         cd linux
         make -j"$(nproc)"
 
-    - name: Build modules
+    - name: Build ZETA-TCP module
       run: |
         cd linux
-        make modules -j"$(nproc)"
+        make M=net/ipv4/zeta_tcp -j"$(nproc)"
 
-    - name: Upload artifacts
+    - name: Archive artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: kernel-with-lotspeed
+        name: zeta-tcp-kernel-build
         path: |
           linux/arch/*/boot/
+          linux/net/ipv4/zeta_tcp/*.ko
           linux/.config
