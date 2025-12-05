@@ -19,7 +19,7 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential flex bison libssl-dev \
-          libncurses-dev dwarves bc git wget xz-utils
+          libncurses-dev dwarves bc git wget xz-utils libelf-dev libbpf-dev  pkg-config
     
     - name: 检出 Zeta-TCP 代码
       uses: actions/checkout@v4
