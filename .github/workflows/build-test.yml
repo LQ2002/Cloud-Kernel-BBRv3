@@ -12,13 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - name: 最大化构建空间
-      run: |
-        sudo rm -rf /usr/share/dotnet
-        sudo rm -rf /opt/ghc
-        sudo rm -rf "/usr/local/share/boost"
-        sudo rm -rf "$AGENT_TOOLSDIRECTORY"
-        df -h
+    - name: Checkout repository
+      uses: actions/checkout@v4
     
     - name: 安装依赖
       run: |
