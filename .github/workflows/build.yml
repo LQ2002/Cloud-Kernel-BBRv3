@@ -331,6 +331,7 @@ jobs:
           	help
           	  Zeta-TCP congestion control algorithm.
           KCONFIG_END
+      
       - name: Configure Kernel
         run: |
           cd linux
@@ -339,36 +340,38 @@ jobs:
           echo "=== Configuring TCP Congestion Control ==="
           
           if [ "$XANMOD_OK" == "true" ]; then
-            # 启用 BBR (CONFIG_TCP_CONG_BBR) 作为内建
+            # 启用所有 BBR 变体(如果存在)
             scripts/config --enable CONFIG_TCP_CONG_BBR
+            scripts/config --enable CONFIG_TCP_CONG_BBR1 2>/dev/null || true
+            scripts/config --enable CONFIG_TCP_CONG_BBR2 2>/dev/null || true
+            scripts/config --enable CONFIG_TCP_CONG_BBRPLUS 2>/dev/null || true
+            scripts/config --enable CONFIG_TCP_CONG_BRUTAL 2>/dev/null || true
             
-            # 其他 BBR 变体作为内建
-            scripts/config --enable CONFIG_TCP_CONG_BBR1 || echo "⚠️ BBR1 not available"
-            scripts/config --enable CONFIG_TCP_CONG_BBR2 || echo "⚠️ BBR2 not available"
-            scripts/config --enable CONFIG_TCP_CONG_BBRPLUS || echo "⚠️ BBRPlus not available"
-            scripts/config --enable CONFIG_TCP_CONG_BRUTAL || echo "⚠️ Brutal not available"
-            
-            # 设置 Xanmod bbr 为默认算法
             scripts/config --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
             scripts/config --enable CONFIG_DEFAULT_BBR
             scripts/config --disable CONFIG_DEFAULT_CUBIC
             
-            echo "✅ Configured BBR as default congestion control"
-          else
-            echo "⚠️ Xanmod patches not available, skipping BBR configuration"
+            echo "✅ Configured BBR variants"
+          fi
+          
+          # 🔴 添加 BORE 调度器配置
+          if [ "$BORE_OK" == "true" ]; then
+            echo ""
+            echo "=== Configuring BORE Scheduler ==="
+            scripts/config --enable CONFIG_SCHED_BORE
+            scripts/config --set-val CONFIG_SCHED_BORE_DEFAULT 1
+            echo "✅ BORE scheduler enabled"
           fi
           
           echo ""
-          echo "=== Disabling BTF to prevent build failures ==="
+          echo "=== Disabling BTF ==="
           scripts/config --disable CONFIG_DEBUG_INFO_BTF
           scripts/config --disable CONFIG_DEBUG_INFO_BTF_MODULES
           scripts/config --disable CONFIG_DEBUG_INFO
-          scripts/config --disable CONFIG_DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT
           scripts/config --enable CONFIG_TCP_CONG_ZETA
           
           make olddefconfig
-          
-          echo "=== Configuration complete ==="
+      
       - name: Verify Kernel Configuration
         run: |
           cd linux
@@ -408,6 +411,30 @@ jobs:
           
           echo ""
           echo "================================================"
+
+      - name: Check Applied Patches
+        run: |
+          cd linux
+          
+          echo "=== Checking for BORE scheduler code ==="
+          if grep -r "CONFIG_SCHED_BORE" kernel/sched/ 2>/dev/null; then
+            echo "✅ BORE code found in kernel"
+          else
+            echo "❌ BORE code NOT found - patches may not have applied"
+          fi
+          
+          echo ""
+          echo "=== Checking for BBR variants ==="
+          if grep -r "tcp_bbr1\|tcp_bbrplus\|tcp_bbr2" net/ipv4/ 2>/dev/null; then
+            echo "✅ BBR variant code found"
+          else
+            echo "❌ BBR variant code NOT found - Xanmod patches may not have applied"
+          fi
+          
+          echo ""
+          echo "=== Final .config check ==="
+          grep "CONFIG_SCHED_BORE\|CONFIG_TCP_CONG_BBR" .config | grep -v "^#"
+      
       - name: Build Kernel Debian Packages
         env:
           KBUILD_BUILD_USER: "cloudpassenger"
