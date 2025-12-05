@@ -1,4 +1,4 @@
-name: Build Debian Kernel (x86_64)_Zeta-TCP
+name: Build Debian Kernel (x86_64)
 
 on:
   repository_dispatch:
@@ -304,7 +304,7 @@ jobs:
 
       - name: 集成 Zeta-TCP
         run: |
-          cd linux-6.12.21
+          cd linux-${{ needs.prepare.outputs.kernel_major_version }}
           mkdir -p net/ipv4/tcp_zeta
           cp ../lotspeed/zeta_tcp/*.c net/ipv4/tcp_zeta/
           cp ../lotspeed/zeta_tcp/*.h net/ipv4/tcp_zeta/
