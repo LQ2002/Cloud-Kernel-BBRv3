@@ -12,151 +12,64 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-    
     - name: 安装依赖
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential flex bison libssl-dev \
-          libncurses-dev dwarves bc git wget xz-utils libelf-dev libbpf-dev  pkg-config
+        sudo apt-get install -y build-essential libncurses-dev bison flex \
+          libssl-dev libelf-dev libdw-dev bc wget xz-utils git
     
-    - name: 检出 Zeta-TCP 代码
-      uses: actions/checkout@v4
-      with:
-        repository: uk0/lotspeed
-        ref: zeta-tcp
-        path: zeta-tcp-src
-    
-    - name: 下载 Linux 内核 6.12.21
+    - name: 下载源码
       run: |
+        # 下载内核
         wget https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.12.21.tar.xz
         tar -xf linux-6.12.21.tar.xz
-        cd linux-6.12.21
-        echo "内核源码已解压"
+        
+        # 下载 zeta-tcp
+        git clone -b zeta-tcp --depth=1 https://github.com/uk0/lotspeed.git
     
-    - name: 集成 Zeta-TCP 到内核源码
+    - name: 集成并编译
       run: |
         cd linux-6.12.21
         
-        # 创建 zeta-tcp 模块目录
-        mkdir -p net/ipv4/zeta_tcp
+        # 集成 zeta-tcp
+        mkdir -p net/ipv4/tcp_zeta
+        cp ../lotspeed/zeta_tcp/*.c net/ipv4/tcp_zeta/
+        cp ../lotspeed/zeta_tcp/*.h net/ipv4/tcp_zeta/
         
-        # 复制 zeta-tcp 源码
-        cp -r ../zeta-tcp-src/zeta_tcp/* net/ipv4/zeta_tcp/
+        # 创建 Makefile
+        cat > net/ipv4/tcp_zeta/Makefile <<'MAKEFILE_EOF'
+        obj-$(CONFIG_TCP_CONG_ZETA) += tcp_zeta.o
+        tcp_zeta-y := zeta_main.o zeta_cong.o zeta_rtt.o zeta_loss.o
+        MAKEFILE_EOF
         
-        # 修改 net/ipv4/Makefile，添加 zeta-tcp 编译
-        echo "obj-\$(CONFIG_TCP_CONG_ZETA) += zeta_tcp/" >> net/ipv4/Makefile
+        echo "obj-\$(CONFIG_TCP_CONG_ZETA) += tcp_zeta/" >> net/ipv4/Makefile
         
-        # 修改 net/ipv4/Kconfig，添加 Zeta-TCP 配置选项
-        cat >> net/ipv4/Kconfig.tmp << 'KCONFIG_EOF'
+        # 添加 Kconfig
+        cat >> net/ipv4/Kconfig <<'KCONFIG_EOF'
         
         config TCP_CONG_ZETA
-          tristate "Zeta TCP congestion control"
-          default m
-          help
-            Zeta-TCP is an advanced congestion control algorithm
-            designed for high-speed networks.
-            
-            For more information see:
-            https://github.com/uk0/lotspeed
-        
-            To compile this as a module, choose M here: the
-            module will be called tcp_zeta.
+        	tristate "Zeta TCP congestion control"
+        	default m
+        	help
+        	  Zeta-TCP congestion control algorithm.
         KCONFIG_EOF
         
-        # 将新配置追加到 Kconfig
-        cat net/ipv4/Kconfig net/ipv4/Kconfig.tmp > net/ipv4/Kconfig.new
-        mv net/ipv4/Kconfig.new net/ipv4/Kconfig
-        rm net/ipv4/Kconfig.tmp
-        
-        echo "Zeta-TCP 已集成到内核源码树"
-    
-    - name: 创建内核配置
-      run: |
-        cd linux-6.12.21
-        
-        # 使用默认配置
+        # 配置内核
         make defconfig
-        
-        # 启用必要的网络和拥塞控制选项
-        scripts/config --enable CONFIG_TCP_CONG_ADVANCED
-        scripts/config --enable CONFIG_TCP_CONG_CUBIC
-        scripts/config --enable CONFIG_TCP_CONG_BBR
         scripts/config --module CONFIG_TCP_CONG_ZETA
-        scripts/config --enable CONFIG_NET
-        scripts/config --enable CONFIG_INET
-        
-        # 优化编译选项
         scripts/config --disable CONFIG_DEBUG_INFO
-        scripts/config --disable CONFIG_DEBUG_INFO_BTF
-        scripts/config --disable CONFIG_GDB_SCRIPTS
-        
-        # 更新配置
         make olddefconfig
         
-        echo "内核配置完成"
-    
-    - name: 编译内核模块
-      run: |
-        cd linux-6.12.21
-        
-        # 只编译网络相关模块以节省时间
+        # 编译模块
         make -j$(nproc) modules_prepare
-        make -j$(nproc) M=net/ipv4/zeta_tcp modules
+        make -j$(nproc) M=net/ipv4/tcp_zeta modules
         
-        echo "Zeta-TCP 模块编译完成"
+        # 检查结果
+        ls -lh net/ipv4/tcp_zeta/tcp_zeta.ko
     
-    - name: 检查编译结果
-      run: |
-        cd linux-6.12.21
-        
-        # 查找编译生成的模块
-        find net/ipv4/zeta_tcp -name "*.ko" -exec ls -lh {} \;
-        
-        # 显示模块信息
-        if [ -f net/ipv4/zeta_tcp/tcp_zeta.ko ]; then
-          modinfo net/ipv4/zeta_tcp/tcp_zeta.ko || true
-        fi
-    
-    - name: 打包编译结果
-      run: |
-        mkdir -p artifacts
-        cd linux-6.12.21
-        
-        # 复制编译好的模块
-        find net/ipv4/zeta_tcp -name "*.ko" -exec cp {} ../artifacts/ \;
-        
-        # 复制配置文件
-        cp .config ../artifacts/kernel-config-6.12.21-zeta
-        
-        cd ../artifacts
-        ls -lh
-        
-        # 创建压缩包
-        tar -czf zeta-tcp-kernel-modules-6.12.21.tar.gz *.ko kernel-config-6.12.21-zeta
-    
-    - name: 上传编译产物
+    - name: 上传到 Actions
       uses: actions/upload-artifact@v4
       with:
-        name: zeta-tcp-kernel-modules-6.12.21
-        path: artifacts/zeta-tcp-kernel-modules-6.12.21.tar.gz
+        name: zeta-tcp-kernel-6.12.21
+        path: linux-6.12.21/net/ipv4/tcp_zeta/tcp_zeta.ko
         retention-days: 30
-    
-    - name: 上传独立模块文件
-      uses: actions/upload-artifact@v4
-      with:
-        name: zeta-tcp-modules
-        path: artifacts/*.ko
-        retention-days: 30
-    
-    - name: 显示编译信息
-      run: |
-        echo "==================================="
-        echo "编译完成！"
-        echo "==================================="
-        echo "内核版本: 6.12.21"
-        echo "Zeta-TCP 算法已集成"
-        echo ""
-        echo "编译产物已上传到 Artifacts"
-        echo "==================================="
