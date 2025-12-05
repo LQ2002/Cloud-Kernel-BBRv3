@@ -36,6 +36,11 @@ jobs:
         cp ../lotspeed/zeta_tcp/*.c net/ipv4/tcp_zeta/
         cp ../lotspeed/zeta_tcp/*.h net/ipv4/tcp_zeta/
         
+        # 修复头文件问题 - 在 zeta_tcp.h 顶部添加必要的 include
+        sed -i '1i #include <linux/tcp.h>' net/ipv4/tcp_zeta/zeta_tcp.h
+        sed -i '1i #include <net/tcp.h>' net/ipv4/tcp_zeta/zeta_tcp.h
+        sed -i '1i #include <linux/types.h>' net/ipv4/tcp_zeta/zeta_tcp.h
+        
         # 创建 Makefile
         cat > net/ipv4/tcp_zeta/Makefile <<'MAKEFILE_EOF'
         obj-$(CONFIG_TCP_CONG_ZETA) += tcp_zeta.o
