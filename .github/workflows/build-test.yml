@@ -18,24 +18,8 @@ jobs:
     - name: 安装依赖
       run: |
         sudo apt-get update
-        sudo apt-get install -y \
-          build-essential \
-          libncurses-dev \
-          bison \
-          flex \
-          libssl-dev \
-          libelf-dev \
-          bc \
-          kmod \
-          cpio \
-          wget \
-          xz-utils \
-          git \
-          fakeroot \
-          kernel-package \
-          ccache \
-          dwarves \
-          zstd
+        sudo apt-get install -y build-essential flex bison libssl-dev \
+          libncurses-dev dwarves bc git wget xz-utils
     
     - name: 检出 Zeta-TCP 代码
       uses: actions/checkout@v4
