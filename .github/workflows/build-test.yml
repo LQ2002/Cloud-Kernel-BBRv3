@@ -39,14 +39,7 @@ jobs:
         # 3. 【修复错误 2】注释掉未使用的变量 total_bytes_sent
         # 错误: defined but not used [-Werror=unused-variable]
         sed -i 's/static atomic64_t total_bytes_sent/\/\/ static atomic64_t total_bytes_sent/' linux/net/ipv4/tcp_lotspeed.c
-
-    - name: Apply kernel patches (0000 → 0003)
-      run: |
-        cd linux
-        patch -p1 < ../kernel_patches/6.12/net/0000-net-tcp-bbr1-copy.patch
-        patch -p1 < ../kernel_patches/6.12/net/0001-net-tcp-bbrplus-copy.patch
-        patch -p1 < ../kernel_patches/6.12/net/0002-net-tcp-tcp-brutal.patch
-
+        
     - name: Register LotSpeed in Kernel (Kconfig & Makefile)
       run: |
         cd linux
