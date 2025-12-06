@@ -26,8 +26,19 @@ jobs:
 
     - name: Add LotSpeed source file
       run: |
+        # 1. 下载源码
         wget https://raw.githubusercontent.com/uk0/lotspeed/zeta-tcp/lotspeed.c \
           -O linux/net/ipv4/tcp_lotspeed.c
+        
+        # 2. 【修复错误 1】修改 SAFE_DIV64 宏定义
+        # 原代码: #define SAFE_DIV64(n, d) ((d) ? div64_u64(n, d) : 0)
+        # 问题: (d) 如果是一个计算表达式，GCC 会报 int-in-bool-context 警告
+        # 修复: 改为 ((d) != 0 ? ...) 显式判断
+        sed -i 's/#define SAFE_DIV64(n, d) ((d) ? div64_u64(n, d) : 0)/#define SAFE_DIV64(n, d) ((d) != 0 ? div64_u64(n, d) : 0)/' linux/net/ipv4/tcp_lotspeed.c
+
+        # 3. 【修复错误 2】注释掉未使用的变量 total_bytes_sent
+        # 错误: defined but not used [-Werror=unused-variable]
+        sed -i 's/static atomic64_t total_bytes_sent/\/\/ static atomic64_t total_bytes_sent/' linux/net/ipv4/tcp_lotspeed.c
 
     - name: Apply kernel patches (0000 → 0003)
       run: |
