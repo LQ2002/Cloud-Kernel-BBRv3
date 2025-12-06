@@ -338,10 +338,6 @@ jobs:
         fi
 
         echo ""
-        echo "=== 开启高级拥塞控制选项，否则自定义算法可能不显示 ==="
-        scripts/config --enable CONFIG_TCP_CONG_ADVANCED
-
-        echo ""
         echo "=== 开启 LotSpeed 模块 ==="
         scripts/config --enable CONFIG_TCP_CONG_ADVANCED
         scripts/config --module CONFIG_TCP_CONG_LOTSPEED
