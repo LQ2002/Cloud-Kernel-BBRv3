@@ -37,22 +37,22 @@ jobs:
         patch -p1 < ../kernel_patches/6.12/net/0002-net-tcp-tcp-brutal.patch
 
     - name: Register LotSpeed in Kernel (Kconfig & Makefile)
-        run: |
-          cd linux
+      run: |
+        cd linux
 
-          sed -i '/config TCP_CONG_BBR/a \
-          config TCP_CONG_LOTSPEED\n\
-          \ttristate "LotSpeed TCP congestion control"\n\
-          \tdefault n\n\
-          \thelp\n\
-          \t  LotSpeed TCP congestion control algorithm.\n' net/ipv4/Kconfig
+        sed -i '/config TCP_CONG_BBR/a \
+        config TCP_CONG_LOTSPEED\n\
+        \ttristate "LotSpeed TCP congestion control"\n\
+        \tdefault n\n\
+        \thelp\n\
+        \t  LotSpeed TCP congestion control algorithm.\n' net/ipv4/Kconfig
 
-          echo "obj-\$(CONFIG_TCP_CONG_LOTSPEED) += tcp_lotspeed.o" >> net/ipv4/Makefile
+        echo "obj-\$(CONFIG_TCP_CONG_LOTSPEED) += tcp_lotspeed.o" >> net/ipv4/Makefile
 
-          echo "Checking Kconfig..."
-          grep -A 5 "TCP_CONG_LOTSPEED" net/ipv4/Kconfig
-          echo "Checking Makefile..."
-          grep "tcp_lotspeed.o" net/ipv4/Makefile
+        echo "Checking Kconfig..."
+        grep -A 5 "TCP_CONG_LOTSPEED" net/ipv4/Kconfig
+        echo "Checking Makefile..."
+        grep "tcp_lotspeed.o" net/ipv4/Makefile
 
     - name: Configure kernel
       working-directory: linux
