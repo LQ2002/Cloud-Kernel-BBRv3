@@ -9,10 +9,10 @@ Subject: [PATCH] net: tcp: add lotspeed congestion control
  2 files changed, 12 insertions(+)
 
 diff --git a/net/ipv4/Kconfig b/net/ipv4/Kconfig
-index 000000000000..111111111111 100644
+index abcdef123456..fedcba654321 100644
 --- a/net/ipv4/Kconfig
 +++ b/net/ipv4/Kconfig
-@@ -680,6 +680,17 @@ config TCP_CONG_BRUTAL
+@@ -695,6 +695,17 @@ config TCP_CONG_BRUTAL
  	  Very aggressive loss-based congestion control.
  	  Only recommended for research or controlled environments.
  
@@ -31,10 +31,10 @@ index 000000000000..111111111111 100644
  	tristate "CUBIC TCP"
  	default y
 diff --git a/net/ipv4/Makefile b/net/ipv4/Makefile
-index 000000000000..111111111111 100644
+index 1234567890ab..abcd1234efgh 100644
 --- a/net/ipv4/Makefile
 +++ b/net/ipv4/Makefile
-@@ -35,6 +35,7 @@ obj-$(CONFIG_TCP_CONG_BBR1) += tcp_bbr1.o
+@@ -38,6 +38,7 @@ obj-$(CONFIG_TCP_CONG_BBR1) += tcp_bbr1.o
  obj-$(CONFIG_TCP_CONG_BBRPLUS) += tcp_bbrplus.o
  obj-$(CONFIG_TCP_CONG_BRUTAL) += tcp_brutal.o
  obj-$(CONFIG_TCP_CONG_BIC) += tcp_bic.o
