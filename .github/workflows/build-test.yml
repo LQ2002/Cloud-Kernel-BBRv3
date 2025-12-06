@@ -1,437 +1,50 @@
-name: Build Debian Kernel (x86_64)tcp_zeta
+name: Build Linux 6.12.37 with LotSpeed (built-in)
 
 on:
-  repository_dispatch:
-    types: [trigger-x86_64-build]
   workflow_dispatch:
-    inputs:
-      kernel_version:
-        description: "Kernel version"
-        required: true
-        default: "6.12.37"
-        type: string
-      skip_cache:
-        description: "Skip Cache"
-        required: false
-        default: false
-        type: boolean
 
 jobs:
-  prepare:
-    name: Prepare Build Parameters
-    runs-on: ubuntu-24.04
-    outputs:
-      kernel_version: ${{ steps.prepare_build_parameters.outputs.KERNEL_VERSION }}
-      kernel_minor_version: ${{ steps.prepare_build_parameters.outputs.KERNEL_MINOR_VERSION }}
-      kernel_major_version: ${{ steps.prepare_build_parameters.outputs.KERNEL_MAJOR_VERSION }}
-      skip_cache: ${{ steps.prepare_build_parameters.outputs.SKIP_CACHE }}
-    steps:
-      - name: Prepare Build Parameters
-        id: prepare_build_parameters
-        run: |
-          if [ "${{ github.event_name }}" == "repository_dispatch" ]; then
-            KERNEL_VERSION="${{ github.event.client_payload.kernel_version }}"
-          else
-            KERNEL_VERSION="${{ inputs.kernel_version }}"
-          fi
-          KERNEL_MINOR_VERSION=$(echo "$KERNEL_VERSION" | cut -d '.' -f 2)
-          KERNEL_MAJOR_VERSION=$(echo "$KERNEL_VERSION" | cut -d '.' -f 1)
-          SKIP_CACHE="${{ inputs.skip_cache }}" || SKIP_CACHE=false
-          echo "KERNEL_VERSION=$KERNEL_VERSION" >> $GITHUB_OUTPUT
-          echo "KERNEL_MINOR_VERSION=$KERNEL_MINOR_VERSION" >> $GITHUB_OUTPUT
-          echo "KERNEL_MAJOR_VERSION=$KERNEL_MAJOR_VERSION" >> $GITHUB_OUTPUT
-          echo "SKIP_CACHE=$SKIP_CACHE" >> $GITHUB_OUTPUT
   build:
-    name: Build Debian Kernel Package for x86_64
-    runs-on: ubuntu-24.04
-    needs: prepare
-    outputs:
-      kernel_version: ${{ needs.prepare.outputs.kernel_version }}
-      build_time: ${{ steps.get_build_time.outputs.BUILD_TIMESTAMP }}
+    runs-on: ubuntu-22.04
+
     steps:
-      - name: Install Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential curl git patch jq openssl quilt \
-            libncurses-dev libssl-dev libelf-dev libudev-dev libpci-dev libcap-dev libpcre2-dev libcurl4-openssl-dev \
-            bison bc flex rsync debhelper lz4 pahole zstd dpkg-dev fakeroot kmod cpio xz-utils ccache \
-            libdw-dev binutils-dev libunwind-dev libslang2-dev python3-dev python3-setuptools \
-            liblzma-dev libzstd-dev libbabeltrace-dev libbfd-dev libiberty-dev libnuma-dev perl dwarves
-      - name: Checkout Kernel Sources
-        uses: actions/checkout@v4
-        with:
-          fetch-tags: true
+    - name: Install build deps
+      run: |
+        sudo apt update
+        sudo apt install -y build-essential fakeroot bc bison flex \
+            libssl-dev libelf-dev libncurses-dev xz-utils dwarves
 
-      - name: Download Linux Kernel Source
-        run: |
-          wget https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-${{ needs.prepare.outputs.kernel_version }}.tar.xz
-          tar -xf linux-${{ needs.prepare.outputs.kernel_version }}.tar.xz
-          rm linux-${{ needs.prepare.outputs.kernel_version }}.tar.xz
-          mv linux-${{ needs.prepare.outputs.kernel_version }} linux
-      - name: Download and Check Patches
-        run: |
-          echo "=== Downloading patches for kernel ${{ needs.prepare.outputs.kernel_version }} ==="
-          echo ""
-          
-          # Debian 补丁
-          echo "Downloading Debian kernel patches..."
-          if git clone -b debian/${{ needs.prepare.outputs.kernel_version }}-1 --depth=1 https://salsa.debian.org/kernel-team/linux.git linux-debian 2>&1; then
-            echo "✅ Debian patches downloaded successfully"
-            echo "DEBIAN_OK=true" >> $GITHUB_ENV
-          else
-            echo "⚠️ Debian patches not available (this is normal for newer kernels)"
-            echo "DEBIAN_OK=false" >> $GITHUB_ENV
-          fi
-          
-          echo ""
-          
-          # Xanmod 补丁
-          echo "Downloading Xanmod network patches..."
-          if git clone --depth=1 https://gitlab.com/xanmod/linux-patches.git linux-xanmod-patches 2>&1; then
-            XANMOD_DIR="linux-xanmod-patches/linux-${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}.y-xanmod"
-            if [ -d "$XANMOD_DIR" ]; then
-              echo "✅ Xanmod patches downloaded successfully"
-              echo "XANMOD_OK=true" >> $GITHUB_ENV
-            else
-              echo "⚠️ Xanmod patches not available for kernel ${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}"
-              echo "Available versions:"
-              ls linux-xanmod-patches/ | grep "linux-" | sort -V
-              echo "XANMOD_OK=false" >> $GITHUB_ENV
-            fi
-          else
-            echo "❌ Failed to download Xanmod patches repository"
-            echo "XANMOD_OK=false" >> $GITHUB_ENV
-          fi
-          
-          echo ""
-          
-          # Bore 补丁
-          echo "Downloading Bore scheduler patches..."
-          if git clone --depth=1 https://github.com/firelzrd/bore-scheduler.git bore-patches 2>&1; then
-            BORE_DIR="bore-patches/patches/stable/linux-${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}-bore"
-            if [ -d "$BORE_DIR" ]; then
-              echo "✅ Bore patches downloaded successfully"
-              echo "BORE_OK=true" >> $GITHUB_ENV
-            else
-              echo "⚠️ Bore patches not available for kernel ${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}"
-              echo "Available versions:"
-              ls bore-patches/patches/stable/ | grep "linux-" | sort -V
-              echo "BORE_OK=false" >> $GITHUB_ENV
-            fi
-          else
-            echo "❌ Failed to download Bore patches repository"
-            echo "BORE_OK=false" >> $GITHUB_ENV
-          fi
-          
-          # zeta-tcp 源码下载
-          echo "Downloading Bore scheduler patches..."
-          git clone -b zeta-tcp --depth=1 https://github.com/uk0/lotspeed.git
-          
-          echo ""
-          echo "=== Patch download summary ==="
-          echo "Debian: $DEBIAN_OK"
-          echo "Xanmod: $XANMOD_OK"
-          echo "Bore: $BORE_OK"
-      - name: Organize Patches
-        run: |
-          cd linux
-          mkdir -p patches
-          
-          echo "=== Step 1: Copy Debian patches ==="
-          if [ "$DEBIAN_OK" == "true" ] && [ -d "../linux-debian/debian/patches" ]; then
-            cp -R ../linux-debian/debian/patches/* ./patches/
-            echo "✅ Debian patches copied"
-          else
-            touch patches/series
-            echo "⚠️ Debian patches not available, creating empty series"
-          fi
-          
-          echo ""
-          echo "=== Step 2: Copy Xanmod patches ==="
-          if [ "$XANMOD_OK" == "true" ]; then
-            XANMOD_SOURCE="../linux-xanmod-patches/linux-${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}.y-xanmod"
-            
-            if [ -d "$XANMOD_SOURCE/net" ]; then
-              mkdir -p patches/xanmod-net
-              cp -R "$XANMOD_SOURCE/net"/* patches/xanmod-net/
-              
-              XANMOD_COUNT=$(find patches/xanmod-net -type f -name "*.patch" | wc -l)
-              echo "✅ Copied $XANMOD_COUNT Xanmod patches"
-            else
-              echo "⚠️ Xanmod net directory not found"
-            fi
-          else
-            echo "⚠️ Xanmod patches not available, skipping"
-          fi
-          
-          echo ""
-          echo "=== Step 3: Copy Bore patches ==="
-          if [ "$BORE_OK" == "true" ]; then
-            BORE_SOURCE="../bore-patches/patches/stable/linux-${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}-bore"
-            
-            if [ -d "$BORE_SOURCE" ]; then
-              cp -R "$BORE_SOURCE" patches/cpu-scheduler
-              
-              BORE_COUNT=$(find patches/cpu-scheduler -type f -name "*.patch" | wc -l)
-              echo "✅ Copied $BORE_COUNT Bore patches"
-            else
-              echo "⚠️ Bore directory not found"
-            fi
-          else
-            echo "⚠️ Bore patches not available, skipping"
-          fi
-          
-          echo ""
-          echo "=== Step 4: Copy custom patches ==="
-          CUSTOM_SOURCE="../kernel_patches/${{ needs.prepare.outputs.kernel_major_version }}.${{ needs.prepare.outputs.kernel_minor_version }}"
-          
-          echo "Looking for custom patches in: $CUSTOM_SOURCE"
-          
-          if [ -d "$CUSTOM_SOURCE" ]; then
-            echo "✅ Custom patch directory found"
-            
-            mkdir -p patches/custom
-            cp -R "$CUSTOM_SOURCE"/* patches/custom/
-            
-            echo "Copied custom patches:"
-            find patches/custom -type f -name "*.patch" | while read f; do
-              echo "  - $f"
-            done
-            
-            CUSTOM_COUNT=$(find patches/custom -type f -name "*.patch" | wc -l)
-            echo "✅ Total custom patches: $CUSTOM_COUNT"
-          else
-            echo "⚠️ Custom patch directory not found: $CUSTOM_SOURCE"
-          fi
-          
-          echo ""
-          echo "=== Step 5: Build series file ==="
-          cd patches
-          
-          if [ "$DEBIAN_OK" != "true" ]; then
-            echo "# Patch series for kernel ${{ needs.prepare.outputs.kernel_version }}" > series
-            echo "# Generated at $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> series
-          fi
-          
-          if [ -d "./xanmod-net" ]; then
-            XANMOD_PATCH_COUNT=$(find ./xanmod-net -type f -name "*.patch" | wc -l)
-            if [ $XANMOD_PATCH_COUNT -gt 0 ]; then
-              echo "" >> series
-              echo "# Xanmod Network Patches ($XANMOD_PATCH_COUNT patches)" >> series
-              find ./xanmod-net -type f -name "*.patch" -printf "xanmod-net/%P\n" | sort >> series
-              echo "Added $XANMOD_PATCH_COUNT Xanmod patches to series"
-            fi
-          fi
-          
-          if [ -d "./cpu-scheduler" ]; then
-            BORE_PATCH_COUNT=$(find ./cpu-scheduler -type f -name "*.patch" | wc -l)
-            if [ $BORE_PATCH_COUNT -gt 0 ]; then
-              echo "" >> series
-              echo "# Bore CPU Scheduler Patches ($BORE_PATCH_COUNT patches)" >> series
-              find ./cpu-scheduler -type f -name "*.patch" -printf "cpu-scheduler/%P\n" | sort >> series
-              echo "Added $BORE_PATCH_COUNT Bore patches to series"
-            fi
-          fi
-          
-          if [ -d "./custom" ]; then
-            CUSTOM_PATCH_COUNT=$(find ./custom -type f -name "*.patch" | wc -l)
-            
-            if [ $CUSTOM_PATCH_COUNT -gt 0 ]; then
-              echo "" >> series
-              echo "# Custom Patches ($CUSTOM_PATCH_COUNT patches)" >> series
-              find ./custom -type f -name "*.patch" -printf "custom/%P\n" | sort >> series
-              
-              echo "✅ Added $CUSTOM_PATCH_COUNT custom patches to series"
-              
-              echo ""
-              echo "Custom patches in series:"
-              grep "^custom/" series | nl
-            fi
-          fi
-          
-          echo ""
-          echo "=== Final series file content ==="
-          cat series
-          echo "=================================="
-          
-          echo ""
-          echo "=== Statistics ==="
-          TOTAL_PATCHES=$(grep -c "\.patch$" series || echo 0)
-          XANMOD_IN_SERIES=$(grep -c "^xanmod-net/" series || echo 0)
-          BORE_IN_SERIES=$(grep -c "^cpu-scheduler/" series || echo 0)
-          CUSTOM_IN_SERIES=$(grep -c "^custom/" series || echo 0)
-          
-          echo "Total patches in series: $TOTAL_PATCHES"
-          echo "  - Xanmod: $XANMOD_IN_SERIES"
-          echo "  - Bore: $BORE_IN_SERIES"
-          echo "  - Custom: $CUSTOM_IN_SERIES"
-          echo "=================="
-      - name: Apply Patches
-        run: |
-          cd linux
-          
-          if [ ! -s patches/series ]; then
-            echo "⚠️ No patches to apply"
-            exit 0
-          fi
-          
-          echo "=== Applying Patches ==="
-          quilt push -a -v || echo "Some patches may have failed"
-          
-          echo ""
-          echo "=== Patch Summary ==="
-          
-          TOTAL_EXPECTED=$(grep -c "\.patch$" patches/series || echo 0)
-          TOTAL_APPLIED=$(quilt applied 2>/dev/null | wc -l || echo 0)
-          
-          echo "Total: $TOTAL_APPLIED / $TOTAL_EXPECTED applied"
-          
-          CUSTOM_EXPECTED=$(grep -c "^custom/" patches/series || echo 0)
-          
-          if [ $CUSTOM_EXPECTED -gt 0 ]; then
-            CUSTOM_APPLIED=$(quilt applied 2>/dev/null | grep -c "^custom/" || echo 0)
-            
-            echo "Custom patches: $CUSTOM_APPLIED / $CUSTOM_EXPECTED"
-            
-            if [ $CUSTOM_APPLIED -gt 0 ]; then
-              echo "✅ Custom patches applied:"
-              quilt applied | grep "^custom/"
-            fi
-          fi
-          
-          echo ""
-          echo "Final patch: $(quilt top)"
+    - name: Download kernel source 6.12.37
+      run: |
+        wget https://www.kernel.org/pub/linux/kernel/v6.x/linux-6.12.37.tar.xz
+        tar xf linux-6.12.37.tar.xz
+        mv linux-6.12.37 linux
 
-      - name: 集成 Zeta-TCP
-        run: |
-          cd linux
-          mkdir -p net/ipv4/tcp_zeta
-          cp ../lotspeed/zeta_tcp/*.c net/ipv4/tcp_zeta/
-          cp ../lotspeed/zeta_tcp/*.h net/ipv4/tcp_zeta/
-          
-          # 修复头文件
-          sed -i '1i #include <linux/types.h>' net/ipv4/tcp_zeta/zeta_tcp.h
-          sed -i '2i #include <net/tcp.h>' net/ipv4/tcp_zeta/zeta_tcp.h
-          sed -i '3i #include <linux/tcp.h>' net/ipv4/tcp_zeta/zeta_tcp.h
-          
-          # 创建 Makefile
-          cat > net/ipv4/tcp_zeta/Makefile <<'MAKEFILE_END'
-          obj-m += tcp_zeta.o
-          tcp_zeta-y := zeta_main.o zeta_cong.o zeta_rtt.o zeta_loss.o
-          MAKEFILE_END
-          
-          echo 'obj-$(CONFIG_TCP_CONG_ZETA) += tcp_zeta/' >> net/ipv4/Makefile
-          
-          # 添加 Kconfig
-          cat >> net/ipv4/Kconfig <<'KCONFIG_END'
-          
-          config TCP_CONG_ZETA
-          	tristate "Zeta TCP congestion control"
-          	default y
-          	help
-          	  Zeta-TCP congestion control algorithm.
-          KCONFIG_END
-      - name: Configure Kernel
-        run: |
-          cd linux
-          cp ../configs/x86_64.config .config
-          
-          echo "=== Configuring TCP Congestion Control ==="
-          
-          if [ "$XANMOD_OK" == "true" ]; then
-            # 启用 BBR (CONFIG_TCP_CONG_BBR) 作为内建
-            scripts/config --enable CONFIG_TCP_CONG_BBR
-            
-            # 其他 BBR 变体作为内建
-            scripts/config --enable CONFIG_TCP_CONG_BBR1 || echo "⚠️ BBR1 not available"
-            scripts/config --enable CONFIG_TCP_CONG_BBR2 || echo "⚠️ BBR2 not available"
-            scripts/config --enable CONFIG_TCP_CONG_BBRPLUS || echo "⚠️ BBRPlus not available"
-            scripts/config --enable CONFIG_TCP_CONG_BRUTAL || echo "⚠️ Brutal not available"
-            
-            # 设置 Xanmod bbr 为默认算法
-            scripts/config --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
-            scripts/config --enable CONFIG_DEFAULT_BBR
-            scripts/config --disable CONFIG_DEFAULT_CUBIC
-            
-            echo "✅ Configured BBR as default congestion control"
-          else
-            echo "⚠️ Xanmod patches not available, skipping BBR configuration"
-          fi
-          
-          echo ""
-          echo "=== Disabling BTF to prevent build failures ==="
-          scripts/config --disable CONFIG_DEBUG_INFO_BTF
-          scripts/config --disable CONFIG_DEBUG_INFO_BTF_MODULES
-          scripts/config --disable CONFIG_DEBUG_INFO
-          scripts/config --disable CONFIG_DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT
+    - name: Add LotSpeed algorithm
+      run: |
+        cd linux/net/ipv4
+        wget https://raw.githubusercontent.com/uk0/lotspeed/zeta-tcp/lotspeed.c -O tcp_lotspeed.c
 
+        cd ../../..
+        patch -p1 < lotspeed.patch
 
-          scripts/config --enable CONFIG_TCP_CONG_ZETA
-          scripts/config --disable CONFIG_DEBUG_INFO_DWARF4
-          scripts/config --disable CONFIG_DEBUG_INFO_DWARF5
-          scripts/config --disable CONFIG_GDB_SCRIPTS
-          
-          make olddefconfig
-          
-          echo "=== Configuration complete ==="
-      - name: Verify Kernel Configuration
-        run: |
-          cd linux
-          
-          echo "================================================"
-          echo "Verifying Kernel Configuration"
-          echo "================================================"
-          
-          echo ""
-          echo "Checking BTF status (should be disabled):"
-          if grep -q "# CONFIG_DEBUG_INFO_BTF is not set" .config; then
-            echo "✅ BTF is disabled"
-          else
-            echo "⚠️ BTF might still be enabled"
-            grep "CONFIG_DEBUG_INFO_BTF" .config || true
-          fi
-          
-          if [ "$XANMOD_OK" == "true" ]; then
-            echo ""
-            echo "Checking BBR variants configuration:"
-            echo "BBR (will be bbrv3):"
-            grep "CONFIG_TCP_CONG_BBR=" .config | grep -v "^#"
-            
-            echo ""
-            echo "Other variants:"
-            grep "CONFIG_TCP_CONG_BBR1\|CONFIG_TCP_CONG_BBR2\|CONFIG_TCP_CONG_BBRPLUS\|CONFIG_TCP_CONG_BRUTAL" .config | grep -v "^#" || echo "(not found)"
-            
-            echo ""
-            echo "Default congestion control:"
-            if grep -q 'CONFIG_DEFAULT_TCP_CONG="bbrv3"' .config; then
-              echo "✅ BBRv3 is set as default"
-            else
-              echo "Current default:"
-              grep "CONFIG_DEFAULT_TCP_CONG" .config | grep -v "^#"
-            fi
-          fi
-          
-          echo ""
-          echo "================================================"
-      - name: Build Kernel Debian Packages
-        env:
-          KBUILD_BUILD_USER: "cloudpassenger"
-          KBUILD_BUILD_HOST: "github-actions"
-          KDEB_COMPRESS: "xz"
-        run: |
-          cd linux
-          make -j $(nproc) bindeb-pkg
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: kernel-x86_64
-          path: |
-            *.deb
-            *.changes
-            *.buildinfo
-            *.config
-      - name: Get build time
-        id: get_build_time
-        run: |
-          BUILD_TIMESTAMP=$(date -Is)
-          echo "BUILD_TIMESTAMP=$BUILD_TIMESTAMP" >> $GITHUB_OUTPUT
+    - name: Kernel default config
+      working-directory: linux
+      run: |
+        make defconfig
+        scripts/config --enable CONFIG_TCP_CONG_ADVANCED
+        scripts/config --enable CONFIG_TCP_CONG_LOTSPEED
+        make olddefconfig
+
+    - name: Build kernel
+      working-directory: linux
+      run: |
+        make -j"$(nproc)"
+        make bindeb-pkg -j"$(nproc)"
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: linux-6.12.37-lotspeed
+        path: |
+          *.deb
