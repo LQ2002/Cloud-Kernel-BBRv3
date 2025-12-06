@@ -288,7 +288,7 @@ jobs:
           echo "LotSpeed config already exists, skipping modification."
         else
           perl -i -pe '
-            if (/menu \"TCP Congestion Control\"/) {
+            if (/config TCP_CONG_BBR/) {
               $_ .= "\nconfig TCP_CONG_LOTSPEED\n" .
                     "\ttristate \"LotSpeed TCP congestion control\"\n" .
                     "\tdepends on TCP_CONG_ADVANCED\n" .
