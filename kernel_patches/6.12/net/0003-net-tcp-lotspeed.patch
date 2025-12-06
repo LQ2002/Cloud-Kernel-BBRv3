@@ -9,7 +9,7 @@ Subject: [PATCH] net: tcp: add lotspeed congestion control
  2 files changed, 12 insertions(+)
 
 diff --git a/net/ipv4/Kconfig b/net/ipv4/Kconfig
-index 000000000000..111111111111 100644
+index a1b83f8abc12..def456789abc 100644
 --- a/net/ipv4/Kconfig
 +++ b/net/ipv4/Kconfig
 @@ -709,6 +709,17 @@ config TCP_CONG_BRUTAL
@@ -31,7 +31,7 @@ index 000000000000..111111111111 100644
  	prompt "Default TCP congestion control"
  	default DEFAULT_CUBIC
 diff --git a/net/ipv4/Makefile b/net/ipv4/Makefile
-index 000000000000..111111111111 100644
+index 1234abcd5678..5678abcd1234 100644
 --- a/net/ipv4/Makefile
 +++ b/net/ipv4/Makefile
 @@ -48,6 +48,7 @@ obj-$(CONFIG_TCP_CONG_BBR) += tcp_bbr.o
