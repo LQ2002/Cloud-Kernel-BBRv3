@@ -336,19 +336,31 @@ jobs:
           scripts/config --set-val CONFIG_SCHED_BORE_DEFAULT 1
           echo "✅ BORE scheduler enabled"
         fi
-          
+
         echo ""
-        echo "=== Disabling BTF ==="
+        echo "=== 开启高级拥塞控制选项，否则自定义算法可能不显示 ==="
+        scripts/config --enable CONFIG_TCP_CONG_ADVANCED
+
+        echo ""
+        echo "=== 开启 LotSpeed 模块 ==="
+        scripts/config --enable CONFIG_TCP_CONG_ADVANCED
+        scripts/config --enable CONFIG_TCP_CONG_LOTSPEED
+
+        echo ""
+        echo "=== 禁用所有内核调试符号 ==="
+        scripts/config --disable DEBUG_INFO_DWARF4
+        scripts/config --disable DEBUG_INFO_DWARF5
+        scripts/config --disable DEBUG_INFO_REDUCED
+        scripts/config --disable GDB_SCRIPTS
         scripts/config --disable CONFIG_DEBUG_INFO_BTF
         scripts/config --disable CONFIG_DEBUG_INFO_BTF_MODULES
         scripts/config --disable CONFIG_DEBUG_INFO
-        
-        # 开启高级拥塞控制选项，否则自定义算法可能不显示
-        scripts/config --enable CONFIG_TCP_CONG_ADVANCED
 
-        # 开启 LotSpeed 模块
-        scripts/config --enable CONFIG_TCP_CONG_ADVANCED
-        scripts/config --enable CONFIG_TCP_CONG_LOTSPEED
+        echo ""
+        echo "=== 模块压缩换成 ZSTD ==="
+        scripts/config --enable CONFIG_MODULE_COMPRESS
+        scripts/config --disable CONFIG_MODULE_COMPRESS_XZ
+        scripts/config --enable CONFIG_MODULE_COMPRESS_ZSTD
         
         # 更新配置
         make olddefconfig
@@ -360,8 +372,7 @@ jobs:
       working-directory: linux
       run: |
         # 开始编译并打包 (使用 -j$(nproc) 加速)
-        # bindeb-pkg 会自动生成 headers, image, libc-dev 等 deb 包
-        make -j$(nproc) bindeb-pkg
+        make -j$(nproc) deb-pkg
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
@@ -369,6 +380,7 @@ jobs:
         name: linux-6.12.37-custom
         path: |
             *.deb
+            !*dbg*.deb
             *.changes
             *.buildinfo
             *.config
