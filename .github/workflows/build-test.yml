@@ -1,4 +1,4 @@
-name: Build Linux 6.12.37 with LotSpeed (built-in)
+name: Build Linux 6.12.37 with custom patches
 
 on:
   workflow_dispatch:
@@ -8,27 +8,36 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-    - name: Install build deps
+    - name: Checkout source
+      uses: actions/checkout@v3
+
+    - name: Install build dependencies
       run: |
         sudo apt update
-        sudo apt install -y build-essential fakeroot bc bison flex \
-            libssl-dev libelf-dev libncurses-dev xz-utils dwarves
+        sudo apt install -y build-essential bc bison flex \
+            libssl-dev libelf-dev libncurses-dev dwarves \
+            wget xz-utils fakeroot
 
-    - name: Download kernel source 6.12.37
+    - name: Download Linux 6.12.37
       run: |
         wget https://www.kernel.org/pub/linux/kernel/v6.x/linux-6.12.37.tar.xz
         tar xf linux-6.12.37.tar.xz
         mv linux-6.12.37 linux
 
-    - name: Add LotSpeed algorithm
+    - name: Add LotSpeed source file
       run: |
-        cd linux/net/ipv4
-        wget https://raw.githubusercontent.com/uk0/lotspeed/zeta-tcp/lotspeed.c -O tcp_lotspeed.c
+        wget https://raw.githubusercontent.com/uk0/lotspeed/zeta-tcp/lotspeed.c \
+          -O linux/net/ipv4/tcp_lotspeed.c
 
-        cd ../../..
-        patch -p1 < lotspeed.patch
+    - name: Apply kernel patches (0000 → 0003)
+      run: |
+        cd linux
+        patch -p1 < ../kernel_patches/6.12/net/0000-net-tcp-bbr1-copy.patch
+        patch -p1 < ../kernel_patches/6.12/net/0001-net-tcp-bbrplus-copy.patch
+        patch -p1 < ../kernel_patches/6.12/net/0002-net-tcp-tcp-brutal.patch
+        patch -p1 < ../kernel_patches/6.12/net/0003-net-tcp-lotspeed.patch
 
-    - name: Kernel default config
+    - name: Configure kernel
       working-directory: linux
       run: |
         make defconfig
@@ -43,8 +52,8 @@ jobs:
         make bindeb-pkg -j"$(nproc)"
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v3
       with:
-        name: linux-6.12.37-lotspeed
+        name: linux-6.12.37-custom
         path: |
           *.deb
