@@ -372,6 +372,8 @@ jobs:
       working-directory: linux
       run: |
         git init
+        git config user.email "ci@example.com"
+        git config user.name "CI"
         git add .
         git commit -m init
         # 伪造一个 git 仓库加速编译
