@@ -104,4 +104,7 @@ jobs:
       with:
         name: linux-6.12.37-custom
         path: |
-          *.deb
+            *.deb
+            *.changes
+            *.buildinfo
+            *.config
