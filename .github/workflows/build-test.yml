@@ -72,7 +72,7 @@ jobs:
     - name: Configure kernel
       working-directory: linux
       run: |
-        make defconfig
+        cp ../configs/x86_64.config .config
         
         # 开启高级拥塞控制选项，否则自定义算法可能不显示
         scripts/config --enable CONFIG_TCP_CONG_ADVANCED
