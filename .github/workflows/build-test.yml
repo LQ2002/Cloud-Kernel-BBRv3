@@ -16,7 +16,7 @@ jobs:
         sudo apt update
         sudo apt install -y build-essential bc bison flex \
             libssl-dev libelf-dev libncurses-dev dwarves \
-            wget xz-utils fakeroot
+            wget xz-utils fakeroot debhelper git
 
     - name: Download Linux 6.12.37
       run: |
@@ -39,7 +39,7 @@ jobs:
         # 3. 【修复错误 2】注释掉未使用的变量 total_bytes_sent
         # 错误: defined but not used [-Werror=unused-variable]
         sed -i 's/static atomic64_t total_bytes_sent/\/\/ static atomic64_t total_bytes_sent/' linux/net/ipv4/tcp_lotspeed.c
-        
+
     - name: Register LotSpeed in Kernel (Kconfig & Makefile)
       run: |
         cd linux
@@ -91,8 +91,19 @@ jobs:
     - name: Build kernel
       working-directory: linux
       run: |
-        make -j"$(nproc)"
-        make bindeb-pkg -j"$(nproc)"
+        # 生成默认配置
+        make defconfig
+        
+        # 开启 LotSpeed 模块
+        scripts/config --enable CONFIG_TCP_CONG_ADVANCED
+        scripts/config --enable CONFIG_TCP_CONG_LOTSPEED
+        
+        # 更新配置
+        make olddefconfig
+        
+        # 开始编译并打包 (使用 -j$(nproc) 加速)
+        # bindeb-pkg 会自动生成 headers, image, libc-dev 等 deb 包
+        make -j$(nproc) bindeb-pkg
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
