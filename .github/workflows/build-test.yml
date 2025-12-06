@@ -42,9 +42,12 @@ jobs:
         make -j"$(nproc)"
         make bindeb-pkg -j"$(nproc)"
 
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v3
-      with:
-        name: linux-6.12.37-lotspeed
-        path: |
-          *.deb
+    - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-x86_64
+          path: |
+            *.deb
+            *.changes
+            *.buildinfo
+            *.config
