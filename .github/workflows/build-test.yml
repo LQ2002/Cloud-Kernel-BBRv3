@@ -344,7 +344,7 @@ jobs:
         echo ""
         echo "=== 开启 LotSpeed 模块 ==="
         scripts/config --enable CONFIG_TCP_CONG_ADVANCED
-        scripts/config --enable CONFIG_TCP_CONG_LOTSPEED
+        scripts/config --module CONFIG_TCP_CONG_LOTSPEED
 
         echo ""
         echo "=== 禁用所有内核调试符号 ==="
