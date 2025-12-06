@@ -52,7 +52,7 @@ jobs:
         # Xanmod 补丁
         echo "Downloading Xanmod network patches..."
         if git clone --depth=1 https://gitlab.com/xanmod/linux-patches.git linux-xanmod-patches 2>&1; then
-          XANMOD_DIR="linux-xanmod-patches/6.12.37.y-xanmod"
+          XANMOD_DIR="linux-xanmod-patches/linux-6.12.y-xanmod"
           if [ -d "$XANMOD_DIR" ]; then
             echo "✅ Xanmod patches downloaded successfully"
             echo "XANMOD_OK=true" >> $GITHUB_ENV
@@ -72,7 +72,7 @@ jobs:
         # Bore 补丁
         echo "Downloading Bore scheduler patches..."
         if git clone --depth=1 https://github.com/firelzrd/bore-scheduler.git bore-patches 2>&1; then
-          BORE_DIR="bore-patches/patches/stable/linux-6.12.37-bore"
+          BORE_DIR="bore-patches/patches/stable/linux-6.12-bore"
           if [ -d "$BORE_DIR" ]; then
             echo "✅ Bore patches downloaded successfully"
             echo "BORE_OK=true" >> $GITHUB_ENV
