@@ -1,25 +1,44 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: You <you@example.com>
+Date: Sat, 6 Dec 2025 00:00:00 +0000
+Subject: [PATCH] net: tcp: add lotspeed congestion control
+
+---
+ net/ipv4/Kconfig  | 12 ++++++++++++
+ net/ipv4/Makefile |  1 +
+ 2 files changed, 13 insertions(+)
+
 diff --git a/net/ipv4/Kconfig b/net/ipv4/Kconfig
-index 1b5e6e2..d13e2c2 100644
+index 000000000000..111111111111 100644
 --- a/net/ipv4/Kconfig
 +++ b/net/ipv4/Kconfig
-@@ -492,6 +492,14 @@ config TCP_CONG_ZETA
-          Zeta TCP congestion control algorithm.
- 
+@@ -563,6 +563,18 @@ config TCP_CONG_BRUTAL
+ 	  Very aggressive loss-based congestion control.
+ 	  Only recommended for research or controlled environments.
+
 +config TCP_CONG_LOTSPEED
-+       bool "LotSpeed congestion control algorithm"
-+       depends on INET
-+       help
-+         Port of uk0/lotspeed(zeta-tcp) as a native Linux congestion control
-+         module. Provides auto-scaling congestion window behavior.
++	tristate "LotSpeed TCP congestion control"
++	default n
++	help
++	  LotSpeed / Zeta TCP congestion control algorithm
++	  by uk0. Provides auto-scaling rate adaptation and
++	  learning-based RTT/BW heuristics.
++
++	  To use it at runtime:
++	    sysctl -w net.ipv4.tcp_congestion_control=lotspeed
 +
 +
- endif # TCP_CONG_ADVANCED
- 
 diff --git a/net/ipv4/Makefile b/net/ipv4/Makefile
-index 3ac89a4..df72f7f 100644
+index 000000000000..111111111111 100644
 --- a/net/ipv4/Makefile
 +++ b/net/ipv4/Makefile
-@@ -32,6 +32,7 @@ obj-$(CONFIG_TCP_CONG_BBR1) += tcp_bbr1.o
+@@ -35,6 +35,7 @@ obj-$(CONFIG_TCP_CONG_BBR1) += tcp_bbr1.o
  obj-$(CONFIG_TCP_CONG_BBRPLUS) += tcp_bbrplus.o
  obj-$(CONFIG_TCP_CONG_BRUTAL) += tcp_brutal.o
+ obj-$(CONFIG_TCP_CONG_BIC) += tcp_bic.o
 +obj-$(CONFIG_TCP_CONG_LOTSPEED) += tcp_lotspeed.o
+
+ obj-$(CONFIG_INET_DIAG) += inet_diag.o
+ obj-$(CONFIG_INET_TCP_DIAG) += tcp_diag.o
+--
+2.34.1
