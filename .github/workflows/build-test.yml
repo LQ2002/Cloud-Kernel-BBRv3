@@ -82,6 +82,24 @@ jobs:
         # 将 LotSpeed 设为默认 (可选，如果想开机即用)
         # scripts/config --set-str CONFIG_DEFAULT_TCP_CONG_CONTROL "lotspeed"
 
+        # --- 关键修复：开启云服务器必备驱动 (编译进内核 =y) ---
+        # 开启 VirtIO 磁盘驱动 (解决 No such device /dev/vda1)
+        scripts/config --enable CONFIG_VIRTIO
+        scripts/config --enable CONFIG_VIRTIO_PCI
+        scripts/config --enable CONFIG_VIRTIO_BLK
+        scripts/config --file .config --set-str CONFIG_VIRTIO_BLK y
+        scripts/config --file .config --set-str CONFIG_VIRTIO_PCI y
+        
+        # 开启 VirtIO 网卡驱动 (否则启动后没网)
+        scripts/config --enable CONFIG_VIRTIO_NET
+        scripts/config --file .config --set-str CONFIG_VIRTIO_NET y
+        
+        # 开启 XFS/EXT4 文件系统支持 (截图显示你用的是 XFS)
+        scripts/config --enable CONFIG_XFS_FS
+        scripts/config --file .config --set-str CONFIG_XFS_FS y
+        scripts/config --enable CONFIG_EXT4_FS
+        scripts/config --file .config --set-str CONFIG_EXT4_FS y
+
         # 开启 LotSpeed 模块
         scripts/config --enable CONFIG_TCP_CONG_ADVANCED
         scripts/config --enable CONFIG_TCP_CONG_LOTSPEED
