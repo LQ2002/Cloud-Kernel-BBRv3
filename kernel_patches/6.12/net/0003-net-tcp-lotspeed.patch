@@ -1,5 +1,5 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-From: You <you@example.com>
+From 1234567890abcdef1234567890abcdef12345678 Mon Sep 17 00:00:00 2001
+From: Your Name <you@example.com>
 Date: Sat, 6 Dec 2025 00:00:00 +0000
 Subject: [PATCH] net: tcp: add lotspeed congestion control
 
@@ -12,7 +12,7 @@ diff --git a/net/ipv4/Kconfig b/net/ipv4/Kconfig
 index 000000000000..111111111111 100644
 --- a/net/ipv4/Kconfig
 +++ b/net/ipv4/Kconfig
-@@ -563,6 +563,18 @@ config TCP_CONG_BRUTAL
+@@ -680,6 +680,18 @@ config TCP_CONG_BRUTAL
  	  Very aggressive loss-based congestion control.
  	  Only recommended for research or controlled environments.
 
@@ -20,11 +20,11 @@ index 000000000000..111111111111 100644
 +	tristate "LotSpeed TCP congestion control"
 +	default n
 +	help
-+	  LotSpeed / Zeta TCP congestion control algorithm
-+	  by uk0. Provides auto-scaling rate adaptation and
-+	  learning-based RTT/BW heuristics.
++	  LotSpeed / Zeta TCP congestion control algorithm.
++	  Provides auto-scaling bandwidth tracking and RTT-based
++	  heuristics from uk0's Zeta-TCP.
 +
-+	  To use it at runtime:
++	  To enable:
 +	    sysctl -w net.ipv4.tcp_congestion_control=lotspeed
 +
 +
