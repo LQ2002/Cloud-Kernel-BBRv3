@@ -35,15 +35,48 @@ jobs:
         patch -p1 < ../kernel_patches/6.12/net/0000-net-tcp-bbr1-copy.patch
         patch -p1 < ../kernel_patches/6.12/net/0001-net-tcp-bbrplus-copy.patch
         patch -p1 < ../kernel_patches/6.12/net/0002-net-tcp-tcp-brutal.patch
-        patch -p1 < ../kernel_patches/6.12/net/0003-net-tcp-lotspeed.patch
+
+    - name: Register LotSpeed in Kernel (Kconfig & Makefile)
+        run: |
+          cd linux
+          
+          # 1. 修改 Kconfig：在 BBR 配置后添加 LotSpeed 配置
+          # 这里使用 sed 在 'config TCP_CONG_BBR' 这一行后面插入新的配置块
+          sed -i '/config TCP_CONG_BBR/a \
+          config TCP_CONG_LOTSPEED\n\
+          \ttristate "LotSpeed TCP congestion control"\n\
+          \tdefault n\n\
+          \thelp\n\
+          \t  LotSpeed TCP congestion control algorithm.\n' net/ipv4/Kconfig
+
+          # 2. 修改 Makefile：添加编译对象
+          # 直接追加到文件末尾即可
+          echo "obj-\$(CONFIG_TCP_CONG_LOTSPEED) += tcp_lotspeed.o" >> net/ipv4/Makefile
+
+          # 3. (可选) 验证修改是否成功
+          echo "Checking Kconfig..."
+          grep -A 5 "TCP_CONG_LOTSPEED" net/ipv4/Kconfig
+          echo "Checking Makefile..."
+          grep "tcp_lotspeed.o" net/ipv4/Makefile
 
     - name: Configure kernel
       working-directory: linux
       run: |
         make defconfig
+        
+        # 开启高级拥塞控制选项，否则自定义算法可能不显示
         scripts/config --enable CONFIG_TCP_CONG_ADVANCED
+        
+        # 开启 LotSpeed
         scripts/config --enable CONFIG_TCP_CONG_LOTSPEED
+        # 将 LotSpeed 设为默认 (可选，如果想开机即用)
+        # scripts/config --set-str CONFIG_DEFAULT_TCP_CONG_CONTROL "lotspeed"
+        
+        # 更新配置
         make olddefconfig
+        
+        # 检查最终配置是否生效
+        grep "CONFIG_TCP_CONG_LOTSPEED" .config
 
     - name: Build kernel
       working-directory: linux
