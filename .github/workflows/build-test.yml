@@ -170,7 +170,7 @@ jobs:
         cd patches
         
         if [ "$DEBIAN_OK" != "true" ]; then
-          echo "# Patch series for kernel 6.12.37" > series
+          echo "# Patch series for kernel 6.12" > series
           echo "# Generated at $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> series
         fi
         
