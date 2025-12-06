@@ -57,7 +57,7 @@ jobs:
             echo "✅ Xanmod patches downloaded successfully"
             echo "XANMOD_OK=true" >> $GITHUB_ENV
           else
-            echo "⚠️ Xanmod patches not available for kernel 6.12.37"
+            echo "⚠️ Xanmod patches not available for kernel 6.12"
             echo "Available versions:"
             ls linux-xanmod-patches/ | grep "linux-" | sort -V
             echo "XANMOD_OK=false" >> $GITHUB_ENV
@@ -77,7 +77,7 @@ jobs:
             echo "✅ Bore patches downloaded successfully"
             echo "BORE_OK=true" >> $GITHUB_ENV
           else
-            echo "⚠️ Bore patches not available for kernel 6.12.37"
+            echo "⚠️ Bore patches not available for kernel 6.12"
             echo "Available versions:"
             ls bore-patches/patches/stable/ | grep "linux-" | sort -V
             echo "BORE_OK=false" >> $GITHUB_ENV
@@ -110,7 +110,7 @@ jobs:
         echo ""
         echo "=== Step 2: Copy Xanmod patches ==="
         if [ "$XANMOD_OK" == "true" ]; then
-          XANMOD_SOURCE="../linux-xanmod-patches/linux-6.12.37.y-xanmod"
+          XANMOD_SOURCE="../linux-xanmod-patches/linux-6.12.y-xanmod"
           
           if [ -d "$XANMOD_SOURCE/net" ]; then
             mkdir -p patches/xanmod-net
@@ -128,7 +128,7 @@ jobs:
         echo ""
         echo "=== Step 3: Copy Bore patches ==="
         if [ "$BORE_OK" == "true" ]; then
-          BORE_SOURCE="../bore-patches/patches/stable/linux-6.12.37-bore"
+          BORE_SOURCE="../bore-patches/patches/stable/linux-6.12-bore"
           
           if [ -d "$BORE_SOURCE" ]; then
             cp -R "$BORE_SOURCE" patches/cpu-scheduler
