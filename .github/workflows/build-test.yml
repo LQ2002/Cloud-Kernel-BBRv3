@@ -81,6 +81,10 @@ jobs:
         scripts/config --enable CONFIG_TCP_CONG_LOTSPEED
         # 将 LotSpeed 设为默认 (可选，如果想开机即用)
         # scripts/config --set-str CONFIG_DEFAULT_TCP_CONG_CONTROL "lotspeed"
+
+        # 开启 LotSpeed 模块
+        scripts/config --enable CONFIG_TCP_CONG_ADVANCED
+        scripts/config --enable CONFIG_TCP_CONG_LOTSPEED
         
         # 更新配置
         make olddefconfig
@@ -91,16 +95,6 @@ jobs:
     - name: Build kernel
       working-directory: linux
       run: |
-        # 生成默认配置
-        make defconfig
-        
-        # 开启 LotSpeed 模块
-        scripts/config --enable CONFIG_TCP_CONG_ADVANCED
-        scripts/config --enable CONFIG_TCP_CONG_LOTSPEED
-        
-        # 更新配置
-        make olddefconfig
-        
         # 开始编译并打包 (使用 -j$(nproc) 加速)
         # bindeb-pkg 会自动生成 headers, image, libc-dev 等 deb 包
         make -j$(nproc) bindeb-pkg
