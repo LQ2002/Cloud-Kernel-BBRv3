@@ -371,7 +371,10 @@ jobs:
     - name: Build kernel
       working-directory: linux
       run: |
-        # 开始编译并打包 (使用 -j$(nproc) 加速)
+        git init
+        git add .
+        git commit -m init
+        # 伪造一个 git 仓库加速编译
         make -j$(nproc) deb-pkg
 
     - name: Upload artifacts
