@@ -288,9 +288,10 @@ jobs:
           echo "LotSpeed config already exists, skipping modification."
         else
           perl -i -pe '
-            if (/^config TCP_CONG_BBR$/) {
+            if (/menu \"TCP Congestion Control\"/) {
               $_ .= "\nconfig TCP_CONG_LOTSPEED\n" .
                     "\ttristate \"LotSpeed TCP congestion control\"\n" .
+                    "\tdepends on TCP_CONG_ADVANCED\n" .
                     "\tdefault n\n" .
                     "\thelp\n" .
                     "\t  LotSpeed TCP congestion control algorithm.\n\n";
@@ -300,7 +301,7 @@ jobs:
 
         # --- 修改 Makefile ---
         if ! grep -q "tcp_lotspeed.o" net/ipv4/Makefile; then
-          echo "obj-\$(CONFIG_TCP_CONG_LOTSPEED) += tcp_lotspeed.o" >> net/ipv4/Makefile
+          echo 'obj-$(CONFIG_TCP_CONG_LOTSPEED) += tcp_lotspeed.o' >> net/ipv4/Makefile
         fi
 
         # --- 验证 ---
@@ -348,11 +349,6 @@ jobs:
         
         # 开启高级拥塞控制选项，否则自定义算法可能不显示
         scripts/config --enable CONFIG_TCP_CONG_ADVANCED
-        
-        # 开启 LotSpeed
-        scripts/config --enable CONFIG_TCP_CONG_LOTSPEED
-        # 将 LotSpeed 设为默认 (可选，如果想开机即用)
-        # scripts/config --set-str CONFIG_DEFAULT_TCP_CONG_CONTROL "lotspeed"
 
         # 开启 LotSpeed 模块
         scripts/config --enable CONFIG_TCP_CONG_ADVANCED
