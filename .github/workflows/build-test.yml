@@ -14,15 +14,254 @@ jobs:
     - name: Install build dependencies
       run: |
         sudo apt update
-        sudo apt install -y build-essential bc bison flex \
-            libssl-dev libelf-dev libncurses-dev dwarves \
-            wget xz-utils fakeroot debhelper git
+        sudo apt-get install -y build-essential curl git patch jq openssl quilt \
+            libncurses-dev libssl-dev libelf-dev libudev-dev libpci-dev libcap-dev libpcre2-dev libcurl4-openssl-dev \
+            bison bc flex rsync debhelper lz4 pahole zstd dpkg-dev fakeroot kmod cpio xz-utils ccache \
+            libdw-dev binutils-dev libunwind-dev libslang2-dev python3-dev python3-setuptools \
+            liblzma-dev libzstd-dev libbabeltrace-dev libbfd-dev libiberty-dev libnuma-dev perl \
+            dwarves wget
+
+    - name: Checkout Kernel Sources
+      uses: actions/checkout@v4
+      with:
+        fetch-tags: true
 
     - name: Download Linux 6.12.37
       run: |
         wget https://www.kernel.org/pub/linux/kernel/v6.x/linux-6.12.37.tar.xz
         tar xf linux-6.12.37.tar.xz
         mv linux-6.12.37 linux
+
+    - name: Download and Check Patches
+      run: |
+        echo "=== Downloading patches for kernel linux-6.12.37 ==="
+        echo ""
+        
+        # Debian 补丁
+        echo "Downloading Debian kernel patches..."
+        if git clone -b debian/6.12.37-1 --depth=1 https://salsa.debian.org/kernel-team/linux.git linux-debian 2>&1; then
+          echo "✅ Debian patches downloaded successfully"
+          echo "DEBIAN_OK=true" >> $GITHUB_ENV
+        else
+          echo "⚠️ Debian patches not available (this is normal for newer kernels)"
+          echo "DEBIAN_OK=false" >> $GITHUB_ENV
+        fi
+        
+        echo ""
+        
+        # Xanmod 补丁
+        echo "Downloading Xanmod network patches..."
+        if git clone --depth=1 https://gitlab.com/xanmod/linux-patches.git linux-xanmod-patches 2>&1; then
+          XANMOD_DIR="linux-xanmod-patches/6.12.37.y-xanmod"
+          if [ -d "$XANMOD_DIR" ]; then
+            echo "✅ Xanmod patches downloaded successfully"
+            echo "XANMOD_OK=true" >> $GITHUB_ENV
+          else
+            echo "⚠️ Xanmod patches not available for kernel 6.12.37"
+            echo "Available versions:"
+            ls linux-xanmod-patches/ | grep "linux-" | sort -V
+            echo "XANMOD_OK=false" >> $GITHUB_ENV
+          fi
+        else
+          echo "❌ Failed to download Xanmod patches repository"
+          echo "XANMOD_OK=false" >> $GITHUB_ENV
+        fi
+        
+        echo ""
+        
+        # Bore 补丁
+        echo "Downloading Bore scheduler patches..."
+        if git clone --depth=1 https://github.com/firelzrd/bore-scheduler.git bore-patches 2>&1; then
+          BORE_DIR="bore-patches/patches/stable/linux-6.12.37-bore"
+          if [ -d "$BORE_DIR" ]; then
+            echo "✅ Bore patches downloaded successfully"
+            echo "BORE_OK=true" >> $GITHUB_ENV
+          else
+            echo "⚠️ Bore patches not available for kernel 6.12.37"
+            echo "Available versions:"
+            ls bore-patches/patches/stable/ | grep "linux-" | sort -V
+            echo "BORE_OK=false" >> $GITHUB_ENV
+          fi
+        else
+          echo "❌ Failed to download Bore patches repository"
+          echo "BORE_OK=false" >> $GITHUB_ENV
+        fi
+        
+        echo ""
+        echo "=== Patch download summary ==="
+        echo "Debian: $DEBIAN_OK"
+        echo "Xanmod: $XANMOD_OK"
+        echo "Bore: $BORE_OK"
+
+    - name: Organize Patches
+      run: |
+        cd linux
+        mkdir -p patches
+        
+        echo "=== Step 1: Copy Debian patches ==="
+        if [ "$DEBIAN_OK" == "true" ] && [ -d "../linux-debian/debian/patches" ]; then
+          cp -R ../linux-debian/debian/patches/* ./patches/
+          echo "✅ Debian patches copied"
+        else
+          touch patches/series
+          echo "⚠️ Debian patches not available, creating empty series"
+        fi
+        
+        echo ""
+        echo "=== Step 2: Copy Xanmod patches ==="
+        if [ "$XANMOD_OK" == "true" ]; then
+          XANMOD_SOURCE="../linux-xanmod-patches/linux-6.12.37.y-xanmod"
+          
+          if [ -d "$XANMOD_SOURCE/net" ]; then
+            mkdir -p patches/xanmod-net
+            cp -R "$XANMOD_SOURCE/net"/* patches/xanmod-net/
+            
+            XANMOD_COUNT=$(find patches/xanmod-net -type f -name "*.patch" | wc -l)
+            echo "✅ Copied $XANMOD_COUNT Xanmod patches"
+          else
+            echo "⚠️ Xanmod net directory not found"
+          fi
+        else
+          echo "⚠️ Xanmod patches not available, skipping"
+        fi
+        
+        echo ""
+        echo "=== Step 3: Copy Bore patches ==="
+        if [ "$BORE_OK" == "true" ]; then
+          BORE_SOURCE="../bore-patches/patches/stable/linux-6.12.37-bore"
+          
+          if [ -d "$BORE_SOURCE" ]; then
+            cp -R "$BORE_SOURCE" patches/cpu-scheduler
+            
+            BORE_COUNT=$(find patches/cpu-scheduler -type f -name "*.patch" | wc -l)
+            echo "✅ Copied $BORE_COUNT Bore patches"
+          else
+            echo "⚠️ Bore directory not found"
+          fi
+        else
+          echo "⚠️ Bore patches not available, skipping"
+        fi
+        
+        echo ""
+        echo "=== Step 4: Copy custom patches ==="
+        CUSTOM_SOURCE="../kernel_patches/6.12.37"
+        
+        echo "Looking for custom patches in: $CUSTOM_SOURCE"
+        
+        if [ -d "$CUSTOM_SOURCE" ]; then
+          echo "✅ Custom patch directory found"
+          
+          mkdir -p patches/custom
+          cp -R "$CUSTOM_SOURCE"/* patches/custom/
+          
+          echo "Copied custom patches:"
+          find patches/custom -type f -name "*.patch" | while read f; do
+            echo "  - $f"
+          done
+          
+          CUSTOM_COUNT=$(find patches/custom -type f -name "*.patch" | wc -l)
+          echo "✅ Total custom patches: $CUSTOM_COUNT"
+        else
+          echo "⚠️ Custom patch directory not found: $CUSTOM_SOURCE"
+        fi
+        
+        echo ""
+        echo "=== Step 5: Build series file ==="
+        cd patches
+        
+        if [ "$DEBIAN_OK" != "true" ]; then
+          echo "# Patch series for kernel 6.12.37" > series
+          echo "# Generated at $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> series
+        fi
+        
+        if [ -d "./xanmod-net" ]; then
+          XANMOD_PATCH_COUNT=$(find ./xanmod-net -type f -name "*.patch" | wc -l)
+          if [ $XANMOD_PATCH_COUNT -gt 0 ]; then
+            echo "" >> series
+            echo "# Xanmod Network Patches ($XANMOD_PATCH_COUNT patches)" >> series
+            find ./xanmod-net -type f -name "*.patch" -printf "xanmod-net/%P\n" | sort >> series
+            echo "Added $XANMOD_PATCH_COUNT Xanmod patches to series"
+          fi
+        fi
+        
+        if [ -d "./cpu-scheduler" ]; then
+          BORE_PATCH_COUNT=$(find ./cpu-scheduler -type f -name "*.patch" | wc -l)
+          if [ $BORE_PATCH_COUNT -gt 0 ]; then
+            echo "" >> series
+            echo "# Bore CPU Scheduler Patches ($BORE_PATCH_COUNT patches)" >> series
+            find ./cpu-scheduler -type f -name "*.patch" -printf "cpu-scheduler/%P\n" | sort >> series
+            echo "Added $BORE_PATCH_COUNT Bore patches to series"
+          fi
+        fi
+        
+        if [ -d "./custom" ]; then
+          CUSTOM_PATCH_COUNT=$(find ./custom -type f -name "*.patch" | wc -l)
+          
+          if [ $CUSTOM_PATCH_COUNT -gt 0 ]; then
+            echo "" >> series
+            echo "# Custom Patches ($CUSTOM_PATCH_COUNT patches)" >> series
+            find ./custom -type f -name "*.patch" -printf "custom/%P\n" | sort >> series
+            
+            echo "✅ Added $CUSTOM_PATCH_COUNT custom patches to series"
+            
+            echo ""
+            echo "Custom patches in series:"
+            grep "^custom/" series | nl
+          fi
+        fi
+        
+        echo ""
+        echo "=== Final series file content ==="
+        cat series
+        echo "=================================="
+        
+        echo ""
+        echo "=== Statistics ==="
+        TOTAL_PATCHES=$(grep -c "\.patch$" series || echo 0)
+        XANMOD_IN_SERIES=$(grep -c "^xanmod-net/" series || echo 0)
+        BORE_IN_SERIES=$(grep -c "^cpu-scheduler/" series || echo 0)
+        CUSTOM_IN_SERIES=$(grep -c "^custom/" series || echo 0)
+        
+        echo "Total patches in series: $TOTAL_PATCHES"
+        echo "  - Xanmod: $XANMOD_IN_SERIES"
+        echo "  - Bore: $BORE_IN_SERIES"
+        echo "  - Custom: $CUSTOM_IN_SERIES"
+        echo "=================="
+    - name: Apply Patches
+      run: |
+        cd linux
+        
+        if [ ! -s patches/series ]; then
+          echo "⚠️ No patches to apply"
+          exit 0
+        fi
+        
+        echo "=== Applying Patches ==="
+        quilt push -a -v || echo "Some patches may have failed"
+        
+        echo ""
+        echo "=== Patch Summary ==="
+        
+        TOTAL_EXPECTED=$(grep -c "\.patch$" patches/series || echo 0)
+        TOTAL_APPLIED=$(quilt applied 2>/dev/null | wc -l || echo 0)
+        
+        echo "Total: $TOTAL_APPLIED / $TOTAL_EXPECTED applied"
+        
+        CUSTOM_EXPECTED=$(grep -c "^custom/" patches/series || echo 0)
+        
+        if [ $CUSTOM_EXPECTED -gt 0 ]; then
+          CUSTOM_APPLIED=$(quilt applied 2>/dev/null | grep -c "^custom/" || echo 0)
+          
+          echo "Custom patches: $CUSTOM_APPLIED / $CUSTOM_EXPECTED"
+          
+          if [ $CUSTOM_APPLIED -gt 0 ]; then
+            echo "✅ Custom patches applied:"
+            quilt applied | grep "^custom/"
+          fi
+        fi
+        
+        echo ""
+        echo "Final patch: $(quilt top)"
 
     - name: Add LotSpeed source file
       run: |
@@ -73,6 +312,38 @@ jobs:
       working-directory: linux
       run: |
         cp ../configs/x86_64.config .config
+
+        echo "=== Configuring TCP Congestion Control ==="
+        
+        if [ "$XANMOD_OK" == "true" ]; then
+          # 启用所有 BBR 变体(如果存在)
+          scripts/config --enable CONFIG_TCP_CONG_BBR
+          scripts/config --enable CONFIG_TCP_CONG_BBR1 2>/dev/null || true
+          scripts/config --enable CONFIG_TCP_CONG_BBR2 2>/dev/null || true
+          scripts/config --enable CONFIG_TCP_CONG_BBRPLUS 2>/dev/null || true
+          scripts/config --enable CONFIG_TCP_CONG_BRUTAL 2>/dev/null || true
+          
+          scripts/config --set-str CONFIG_DEFAULT_TCP_CONG "bbr"
+          scripts/config --enable CONFIG_DEFAULT_BBR
+          scripts/config --disable CONFIG_DEFAULT_CUBIC
+          
+          echo "✅ Configured BBR variants"
+        fi
+        
+        # 🔴 添加 BORE 调度器配置
+        if [ "$BORE_OK" == "true" ]; then
+          echo ""
+          echo "=== Configuring BORE Scheduler ==="
+          scripts/config --enable CONFIG_SCHED_BORE
+          scripts/config --set-val CONFIG_SCHED_BORE_DEFAULT 1
+          echo "✅ BORE scheduler enabled"
+        fi
+          
+        echo ""
+        echo "=== Disabling BTF ==="
+        scripts/config --disable CONFIG_DEBUG_INFO_BTF
+        scripts/config --disable CONFIG_DEBUG_INFO_BTF_MODULES
+        scripts/config --disable CONFIG_DEBUG_INFO
         
         # 开启高级拥塞控制选项，否则自定义算法可能不显示
         scripts/config --enable CONFIG_TCP_CONG_ADVANCED
