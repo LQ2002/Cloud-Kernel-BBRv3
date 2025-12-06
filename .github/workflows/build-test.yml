@@ -279,35 +279,35 @@ jobs:
         # 错误: defined but not used [-Werror=unused-variable]
         sed -i 's/static atomic64_t total_bytes_sent/\/\/ static atomic64_t total_bytes_sent/' linux/net/ipv4/tcp_lotspeed.c
 
-    - name: Register LotSpeed in Kernel (Kconfig & Makefile)
+    - name: Configure Kconfig and Makefile for LotSpeed
       run: |
         cd linux
         
-        # --- 修改 Kconfig (使用 Perl) ---
+        # --- 修改 Kconfig ---
         if grep -q "config TCP_CONG_LOTSPEED" net/ipv4/Kconfig; then
           echo "LotSpeed config already exists, skipping modification."
         else
-          perl -i -pe '
-            if (/config TCP_CONG_BBR/) {
-              $_ .= "\nconfig TCP_CONG_LOTSPEED\n" .
-                    "\ttristate \"LotSpeed TCP congestion control\"\n" .
-                    "\tdepends on TCP_CONG_ADVANCED\n" .
-                    "\tdefault n\n" .
-                    "\thelp\n" .
-                    "\t  LotSpeed TCP congestion control algorithm.\n\n";
-            }
-          ' net/ipv4/Kconfig
+          cat >> net/ipv4/Kconfig << 'EOF'
+        
+        config TCP_CONG_LOTSPEED
+        	tristate "LotSpeed TCP congestion control"
+        	depends on TCP_CONG_ADVANCED
+        	default n
+        	help
+        	  LotSpeed TCP congestion control algorithm.
+        EOF
         fi
-
+        
         # --- 修改 Makefile ---
         if ! grep -q "tcp_lotspeed.o" net/ipv4/Makefile; then
           echo 'obj-$(CONFIG_TCP_CONG_LOTSPEED) += tcp_lotspeed.o' >> net/ipv4/Makefile
         fi
-
+        
         # --- 验证 ---
         echo "=== Kconfig 验证 ==="
         grep -A 6 "config TCP_CONG_LOTSPEED" net/ipv4/Kconfig
-        echo -e "\n=== Makefile 验证 ==="
+        echo ""
+        echo "=== Makefile 验证 ==="
         grep "tcp_lotspeed.o" net/ipv4/Makefile
 
     - name: Configure kernel
