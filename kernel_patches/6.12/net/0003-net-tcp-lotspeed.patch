@@ -15,7 +15,7 @@ index 000000000000..111111111111 100644
 @@ -680,6 +680,18 @@ config TCP_CONG_BRUTAL
  	  Very aggressive loss-based congestion control.
  	  Only recommended for research or controlled environments.
-
+ 
 +config TCP_CONG_LOTSPEED
 +	tristate "LotSpeed TCP congestion control"
 +	default n
@@ -27,7 +27,9 @@ index 000000000000..111111111111 100644
 +	  To enable:
 +	    sysctl -w net.ipv4.tcp_congestion_control=lotspeed
 +
-+
+ config TCP_CONG_CUBIC
+ 	tristate "CUBIC TCP"
+ 	default y
 diff --git a/net/ipv4/Makefile b/net/ipv4/Makefile
 index 000000000000..111111111111 100644
 --- a/net/ipv4/Makefile
@@ -37,8 +39,8 @@ index 000000000000..111111111111 100644
  obj-$(CONFIG_TCP_CONG_BRUTAL) += tcp_brutal.o
  obj-$(CONFIG_TCP_CONG_BIC) += tcp_bic.o
 +obj-$(CONFIG_TCP_CONG_LOTSPEED) += tcp_lotspeed.o
-
+ 
  obj-$(CONFIG_INET_DIAG) += inet_diag.o
  obj-$(CONFIG_INET_TCP_DIAG) += tcp_diag.o
---
+-- 
 2.34.1
