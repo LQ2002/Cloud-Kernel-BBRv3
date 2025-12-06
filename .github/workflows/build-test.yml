@@ -249,12 +249,12 @@ jobs:
         
         CUSTOM_EXPECTED=$(grep -c "^custom/" patches/series || echo 0)
         
-        if [ $CUSTOM_EXPECTED -gt 0 ]; then
-          CUSTOM_APPLIED=$(quilt applied 2>/dev/null | grep -c "^custom/" || echo 0)
+        if [ "$CUSTOM_EXPECTED" -gt 0 ]; then
+          CUSTOM_APPLIED=$(quilt applied 2>/dev/null | grep "^custom/" | wc -l)
           
           echo "Custom patches: $CUSTOM_APPLIED / $CUSTOM_EXPECTED"
           
-          if [ $CUSTOM_APPLIED -gt 0 ]; then
+          if [ "$CUSTOM_APPLIED" -gt 0 ]; then
             echo "✅ Custom patches applied:"
             quilt applied | grep "^custom/"
           fi
