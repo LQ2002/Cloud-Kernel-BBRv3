@@ -144,7 +144,7 @@ jobs:
         
         echo ""
         echo "=== Step 4: Copy custom patches ==="
-        CUSTOM_SOURCE="../kernel_patches/6.12.37"
+        CUSTOM_SOURCE="../kernel_patches/6.12"
         
         echo "Looking for custom patches in: $CUSTOM_SOURCE"
         
