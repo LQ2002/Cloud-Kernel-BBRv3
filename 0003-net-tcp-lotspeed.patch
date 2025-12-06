@@ -1,0 +1,25 @@
+diff --git a/net/ipv4/Kconfig b/net/ipv4/Kconfig
+index 1b5e6e2..d13e2c2 100644
+--- a/net/ipv4/Kconfig
++++ b/net/ipv4/Kconfig
+@@ -492,6 +492,14 @@ config TCP_CONG_ZETA
+          Zeta TCP congestion control algorithm.
+ 
++config TCP_CONG_LOTSPEED
++       bool "LotSpeed congestion control algorithm"
++       depends on INET
++       help
++         Port of uk0/lotspeed(zeta-tcp) as a native Linux congestion control
++         module. Provides auto-scaling congestion window behavior.
++
++
+ endif # TCP_CONG_ADVANCED
+ 
+diff --git a/net/ipv4/Makefile b/net/ipv4/Makefile
+index 3ac89a4..df72f7f 100644
+--- a/net/ipv4/Makefile
++++ b/net/ipv4/Makefile
+@@ -32,6 +32,7 @@ obj-$(CONFIG_TCP_CONG_BBR1) += tcp_bbr1.o
+ obj-$(CONFIG_TCP_CONG_BBRPLUS) += tcp_bbrplus.o
+ obj-$(CONFIG_TCP_CONG_BRUTAL) += tcp_brutal.o
++obj-$(CONFIG_TCP_CONG_LOTSPEED) += tcp_lotspeed.o
