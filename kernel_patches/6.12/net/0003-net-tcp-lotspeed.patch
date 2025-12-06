@@ -9,12 +9,12 @@ Subject: [PATCH] net: tcp: add lotspeed congestion control
  2 files changed, 12 insertions(+)
 
 diff --git a/net/ipv4/Kconfig b/net/ipv4/Kconfig
-index abcdef123456..fedcba654321 100644
+index 000000000000..111111111111 100644
 --- a/net/ipv4/Kconfig
 +++ b/net/ipv4/Kconfig
-@@ -695,6 +695,17 @@ config TCP_CONG_BRUTAL
- 	  Very aggressive loss-based congestion control.
- 	  Only recommended for research or controlled environments.
+@@ -709,6 +709,17 @@ config TCP_CONG_BRUTAL
+ 	  TCP Brutal is actively maintained to be in sync with the Brutal
+ 	  implementation in Hysteria.
  
 +config TCP_CONG_LOTSPEED
 +	tristate "LotSpeed TCP congestion control"
@@ -27,20 +27,20 @@ index abcdef123456..fedcba654321 100644
 +	  To enable:
 +	    sysctl -w net.ipv4.tcp_congestion_control=lotspeed
 +
- config TCP_CONG_CUBIC
- 	tristate "CUBIC TCP"
- 	default y
+ choice
+ 	prompt "Default TCP congestion control"
+ 	default DEFAULT_CUBIC
 diff --git a/net/ipv4/Makefile b/net/ipv4/Makefile
-index 1234567890ab..abcd1234efgh 100644
+index 000000000000..111111111111 100644
 --- a/net/ipv4/Makefile
 +++ b/net/ipv4/Makefile
-@@ -38,6 +38,7 @@ obj-$(CONFIG_TCP_CONG_BBR1) += tcp_bbr1.o
+@@ -48,6 +48,7 @@ obj-$(CONFIG_TCP_CONG_BBR) += tcp_bbr.o
+ obj-$(CONFIG_TCP_CONG_BBR1) += tcp_bbr1.o
  obj-$(CONFIG_TCP_CONG_BBRPLUS) += tcp_bbrplus.o
  obj-$(CONFIG_TCP_CONG_BRUTAL) += tcp_brutal.o
- obj-$(CONFIG_TCP_CONG_BIC) += tcp_bic.o
 +obj-$(CONFIG_TCP_CONG_LOTSPEED) += tcp_lotspeed.o
- 
- obj-$(CONFIG_INET_DIAG) += inet_diag.o
- obj-$(CONFIG_INET_TCP_DIAG) += tcp_diag.o
+ obj-$(CONFIG_TCP_CONG_BIC) += tcp_bic.o
+ obj-$(CONFIG_TCP_CONG_CDG) += tcp_cdg.o
+ obj-$(CONFIG_TCP_CONG_CUBIC) += tcp_cubic.o
 -- 
 2.34.1
