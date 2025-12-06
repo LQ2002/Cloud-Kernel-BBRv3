@@ -324,10 +324,6 @@ jobs:
           scripts/config --enable CONFIG_TCP_CONG_BBR2 2>/dev/null || true
           scripts/config --enable CONFIG_TCP_CONG_BBRPLUS 2>/dev/null || true
           scripts/config --enable CONFIG_TCP_CONG_BRUTAL 2>/dev/null || true
-
-          scripts/config --set-str CONFIG_DEFAULT_TCP_CONG bbr
-          scripts/config --enable CONFIG_TCP_CONG_BBR
-          scripts/config --disable CONFIG_TCP_CONG_CUBIC
           
           echo "✅ Configured BBR variants"
         fi
