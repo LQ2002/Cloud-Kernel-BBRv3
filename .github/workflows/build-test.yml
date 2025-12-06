@@ -39,20 +39,31 @@ jobs:
     - name: Register LotSpeed in Kernel (Kconfig & Makefile)
       run: |
         cd linux
+        
+        # --- 修改 Kconfig (优化版) ---
+        # 1. 先检查是否已经存在，防止重复运行导致文件错乱
+        if grep -q "config TCP_CONG_LOTSPEED" net/ipv4/Kconfig; then
+          echo "LotSpeed config already exists, skipping modification."
+        else
+          # 2. 使用 '^...$' 精确匹配 "config TCP_CONG_BBR" 这一行
+          # 这样就不会错误匹配到 BBR1 或 BBRPLUS 了
+          sed -i '/^config TCP_CONG_BBR$/a \
+          config TCP_CONG_LOTSPEED\n\
+          \ttristate "LotSpeed TCP congestion control"\n\
+          \tdefault n\n\
+          \thelp\n\
+          \t  LotSpeed TCP congestion control algorithm.\n' net/ipv4/Kconfig
+        fi
 
-        sed -i '/config TCP_CONG_BBR/a \
-        config TCP_CONG_LOTSPEED\n\
-        \ttristate "LotSpeed TCP congestion control"\n\
-        \tdefault n\n\
-        \thelp\n\
-        \t  LotSpeed TCP congestion control algorithm.\n' net/ipv4/Kconfig
+        # --- 修改 Makefile (优化版) ---
+        # 同样先检查是否存在
+        if ! grep -q "tcp_lotspeed.o" net/ipv4/Makefile; then
+          echo "obj-\$(CONFIG_TCP_CONG_LOTSPEED) += tcp_lotspeed.o" >> net/ipv4/Makefile
+        fi
 
-        echo "obj-\$(CONFIG_TCP_CONG_LOTSPEED) += tcp_lotspeed.o" >> net/ipv4/Makefile
-
+        # --- 验证 ---
         echo "Checking Kconfig..."
-        grep -A 5 "TCP_CONG_LOTSPEED" net/ipv4/Kconfig
-        echo "Checking Makefile..."
-        grep "tcp_lotspeed.o" net/ipv4/Makefile
+        grep -A 1 "config TCP_CONG_LOTSPEED" net/ipv4/Kconfig
 
     - name: Configure kernel
       working-directory: linux
